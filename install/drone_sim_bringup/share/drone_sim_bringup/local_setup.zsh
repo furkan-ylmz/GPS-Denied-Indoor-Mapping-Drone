@@ -1,0 +1,1 @@
+/root/drone_project/build/drone_sim_bringup/ament_cmake_environment_hooks/local_setup.zsh

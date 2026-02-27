@@ -1,0 +1,43 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <model name="test_building">
+    <static>true</static>
+    <link name="building_link">
+      <collision name="building_collision">
+        <geometry>
+          <mesh>
+            <uri>meshes/test.obj</uri>
+            <scale>1 1 1</scale>
+          </mesh>
+        </geometry>
+        <surface>
+          <friction>
+            <ode>
+              <mu>1.0</mu>
+              <mu2>1.0</mu2>
+            </ode>
+          </friction>
+          <contact>
+            <ode>
+              <kp>1e6</kp>
+              <kd>100</kd>
+            </ode>
+          </contact>
+        </surface>
+      </collision>
+      <visual name="building_visual">
+        <geometry>
+          <mesh>
+            <uri>meshes/test.obj</uri>
+            <scale>1 1 1</scale>
+          </mesh>
+        </geometry>
+        <material>
+          <ambient>0.7 0.7 0.7 1</ambient>
+          <diffuse>0.8 0.8 0.8 1</diffuse>
+          <specular>0.2 0.2 0.2 1</specular>
+        </material>
+      </visual>
+    </link>
+  </model>
+</sdf>

@@ -1,0 +1,9 @@
+/root/drone_project/build/drone_sim_bringup/CMakeFiles/uninstall.dir
+/root/drone_project/build/drone_sim_bringup/CMakeFiles/drone_sim_bringup_uninstall.dir
+/root/drone_project/build/drone_sim_bringup/CMakeFiles/test.dir
+/root/drone_project/build/drone_sim_bringup/CMakeFiles/edit_cache.dir
+/root/drone_project/build/drone_sim_bringup/CMakeFiles/rebuild_cache.dir
+/root/drone_project/build/drone_sim_bringup/CMakeFiles/list_install_components.dir
+/root/drone_project/build/drone_sim_bringup/CMakeFiles/install.dir
+/root/drone_project/build/drone_sim_bringup/CMakeFiles/install/local.dir
+/root/drone_project/build/drone_sim_bringup/CMakeFiles/install/strip.dir

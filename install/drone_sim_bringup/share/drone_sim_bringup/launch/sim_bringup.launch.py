@@ -1,0 +1,1 @@
+/root/drone_project/src/drone_sim_bringup/launch/sim_bringup.launch.py

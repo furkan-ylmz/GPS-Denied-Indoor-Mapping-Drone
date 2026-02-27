@@ -1,0 +1,39 @@
+-- The C compiler identification is GNU 13.3.0
+-- The CXX compiler identification is GNU 13.3.0
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: /usr/bin/cc - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/c++ - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Found ament_cmake: 2.5.5 (/opt/ros/jazzy/share/ament_cmake/cmake)
+-- Found Python3: /usr/bin/python3 (found version "3.12.3") found components: Interpreter 
+-- Override CMake install command with custom implementation using symlinks instead of copying resources
+-- Configuring done (1.1s)
+-- Generating done (0.0s)
+-- Build files have been written to: /root/drone_project/build/drone_sim_bringup
+-- Install configuration: "Release"
+-- Execute custom install script
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/launch/bridge.launch.py
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/launch/gazebo.launch.py
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/launch/sim_bringup.launch.py
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/config/drone_sim.rviz
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/ament_index/resource_index/package_run_dependencies/drone_sim_bringup
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/ament_index/resource_index/parent_prefix_path/drone_sim_bringup
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/environment/ament_prefix_path.sh
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/environment/ament_prefix_path.dsv
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/environment/path.sh
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/environment/path.dsv
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/local_setup.bash
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/local_setup.sh
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/local_setup.zsh
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/local_setup.dsv
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/package.dsv
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/ament_index/resource_index/packages/drone_sim_bringup
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/cmake/drone_sim_bringupConfig.cmake
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/cmake/drone_sim_bringupConfig-version.cmake
+-- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/package.xml
