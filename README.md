@@ -17,26 +17,26 @@ Bu proje, kapalı bir alanda (2 katlı bina) çalışacak bir otonom drone siste
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                     Docker Container                         │
-│                                                              │
+│                     Docker Container                        │
+│                                                             │
 │  ┌──────────┐    ┌──────────────┐    ┌──────────────────┐   │
 │  │ PX4 SITL │◄──►│  Micro XRCE  │◄──►│    ROS 2 Jazzy   │   │
 │  │ (gz_x500)│    │  DDS Agent   │    │                  │   │
 │  └────┬─────┘    └──────────────┘    │  ┌────────────┐  │   │
-│       │                              │  │ px4_offboard│  │   │
-│       ▼                              │  │  (kontrol)  │  │   │
+│       │                              │  │px4_offboard│  │   │
+│       ▼                              │  │  (kontrol) │  │   │
 │  ┌──────────┐    ┌──────────────┐    │  └────────────┘  │   │
 │  │ Gazebo   │◄──►│  ros_gz_     │◄──►│  ┌────────────┐  │   │
-│  │ Harmonic │    │  bridge      │    │  │    SLAM     │  │   │
-│  │          │    └──────────────┘    │  │ (planlanan) │  │   │
+│  │ Harmonic │    │  bridge      │    │  │    SLAM    │  │   │
+│  │          │    └──────────────┘    │  │(planlanan) │  │   │
 │  │ ┌──────┐ │     Sensör Topics:     │  └────────────┘  │   │
 │  │ │Build.│ │     /drone/lidar/pts   │  ┌────────────┐  │   │
-│  │ │ .obj │ │     /drone/camera      │  │   Nav2      │  │   │
-│  │ └──────┘ │                        │  │ (planlanan) │  │   │
+│  │ │ .obj │ │     /drone/camera      │  │    Nav2    │  │   │
+│  │ └──────┘ │                        │  │(planlanan) │  │   │
 │  │ ┌──────┐ │     PX4 Topics:        │  └────────────┘  │   │
-│  │ │x500_ │ │     /fmu/in/*           │  ┌────────────┐  │   │
-│  │ │lidar │ │     /fmu/out/*          │  │    OCR      │  │   │
-│  │ └──────┘ │                        │  │ (planlanan) │  │   │
+│  │ │x500_ │ │     /fmu/in/*          │  ┌────────────┐  │   │
+│  │ │lidar │ │     /fmu/out/*         │  │    OCR     │  │   │
+│  │ └──────┘ │                        │  │(planlanan) │  │   │
 │  └──────────┘                        │  └────────────┘  │   │
 │                                      └──────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
@@ -196,13 +196,13 @@ bash /root/drone_project/scripts/run_full_sim.sh
 
 ```
 ╔═══════════════════════════════════╗
-║  w/s : İleri / Geri     [0.5m]   ║
-║  a/d : Sol / Sağ        [0.5m]   ║
-║  q/e : Yukarı / Aşağı   [0.3m]   ║
-║  t   : Takeoff (kalkış)          ║
-║  l   : Land (iniş)               ║
-║  SPC : Hover (yerinde dur)       ║
-║  ESC : Çıkış                     ║
+║  w/s : İleri / Geri     [0.5m]    ║
+║  a/d : Sol / Sağ        [0.5m]    ║
+║  q/e : Yukarı / Aşağı   [0.3m]    ║
+║  t   : Takeoff (kalkış)           ║
+║  l   : Land (iniş)                ║
+║  SPC : Hover (yerinde dur)        ║
+║  ESC : Çıkış                      ║
 ╚═══════════════════════════════════╝
 ```
 
