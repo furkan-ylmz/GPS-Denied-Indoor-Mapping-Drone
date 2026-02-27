@@ -1,0 +1,25 @@
+[0.026s] Invoking command in '/root/drone_project/build/drone_sim_bringup': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy /usr/bin/cmake --build /root/drone_project/build/drone_sim_bringup -- -j16 -l16
+[0.181s] Invoked command in '/root/drone_project/build/drone_sim_bringup' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy /usr/bin/cmake --build /root/drone_project/build/drone_sim_bringup -- -j16 -l16
+[0.199s] Invoking command in '/root/drone_project/build/drone_sim_bringup': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy /usr/bin/cmake --install /root/drone_project/build/drone_sim_bringup
+[0.213s] -- Install configuration: "Release"
+[0.216s] -- Execute custom install script
+[0.218s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/launch/bridge.launch.py
+[0.219s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/launch/gazebo.launch.py
+[0.219s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/launch/sim_bringup.launch.py
+[0.220s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/config/drone_sim.rviz
+[0.220s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/ament_index/resource_index/package_run_dependencies/drone_sim_bringup
+[0.221s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/ament_index/resource_index/parent_prefix_path/drone_sim_bringup
+[0.221s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/environment/ament_prefix_path.sh
+[0.222s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/environment/ament_prefix_path.dsv
+[0.223s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/environment/path.sh
+[0.223s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/environment/path.dsv
+[0.224s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/local_setup.bash
+[0.224s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/local_setup.sh
+[0.225s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/local_setup.zsh
+[0.225s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/local_setup.dsv
+[0.226s] -- Symlinking: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/package.dsv
+[0.243s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/ament_index/resource_index/packages/drone_sim_bringup
+[0.243s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/cmake/drone_sim_bringupConfig.cmake
+[0.244s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/cmake/drone_sim_bringupConfig-version.cmake
+[0.244s] -- Up-to-date symlink: /root/drone_project/install/drone_sim_bringup/share/drone_sim_bringup/package.xml
+[0.247s] Invoked command in '/root/drone_project/build/drone_sim_bringup' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy /usr/bin/cmake --install /root/drone_project/build/drone_sim_bringup

@@ -1,0 +1,304 @@
+<?xml version="1.0" ?>
+<sdf version="1.9">
+  <model name="simple_drone">
+    <pose>0 0 0.18 0 0 0</pose>
+
+    <!-- ══════════════════════════════════════════════
+         ANA GÖVDE (body)
+         ══════════════════════════════════════════════ -->
+    <link name="base_link">
+      <inertial>
+        <mass>1.5</mass>
+        <inertia>
+          <ixx>0.029125</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.029125</iyy>
+          <iyz>0</iyz>
+          <izz>0.055225</izz>
+        </inertia>
+      </inertial>
+
+      <!-- Gövde collision -->
+      <collision name="body_collision">
+        <geometry>
+          <box><size>0.35 0.35 0.10</size></box>
+        </geometry>
+      </collision>
+
+      <!-- Gövde visual - ana kutu -->
+      <visual name="body_visual">
+        <geometry>
+          <box><size>0.35 0.35 0.10</size></box>
+        </geometry>
+        <material>
+          <ambient>0.2 0.2 0.2 1</ambient>
+          <diffuse>0.3 0.3 0.3 1</diffuse>
+          <specular>0.5 0.5 0.5 1</specular>
+        </material>
+      </visual>
+
+      <!-- ── KOL 1: Sağ-ön (+X, +Y) ── -->
+      <visual name="arm_front_right">
+        <pose>0.13 -0.13 0.01 0 0 -0.785</pose>
+        <geometry>
+          <box><size>0.22 0.02 0.02</size></box>
+        </geometry>
+        <material>
+          <ambient>0.6 0.1 0.1 1</ambient>
+          <diffuse>0.8 0.2 0.2 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- ── KOL 2: Sol-ön (+X, -Y) ── -->
+      <visual name="arm_front_left">
+        <pose>0.13 0.13 0.01 0 0 0.785</pose>
+        <geometry>
+          <box><size>0.22 0.02 0.02</size></box>
+        </geometry>
+        <material>
+          <ambient>0.6 0.1 0.1 1</ambient>
+          <diffuse>0.8 0.2 0.2 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- ── KOL 3: Sağ-arka (-X, +Y) ── -->
+      <visual name="arm_rear_right">
+        <pose>-0.13 -0.13 0.01 0 0 0.785</pose>
+        <geometry>
+          <box><size>0.22 0.02 0.02</size></box>
+        </geometry>
+        <material>
+          <ambient>0.1 0.1 0.6 1</ambient>
+          <diffuse>0.2 0.2 0.8 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- ── KOL 4: Sol-arka (-X, -Y) ── -->
+      <visual name="arm_rear_left">
+        <pose>-0.13 0.13 0.01 0 0 -0.785</pose>
+        <geometry>
+          <box><size>0.22 0.02 0.02</size></box>
+        </geometry>
+        <material>
+          <ambient>0.1 0.1 0.6 1</ambient>
+          <diffuse>0.2 0.2 0.8 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- ── Motor kapakları (4 silindir) ── -->
+      <visual name="motor_fr">
+        <pose>0.22 -0.22 0.04 0 0 0</pose>
+        <geometry><cylinder><radius>0.025</radius><length>0.04</length></cylinder></geometry>
+        <material><diffuse>0.1 0.1 0.1 1</diffuse></material>
+      </visual>
+      <visual name="motor_fl">
+        <pose>0.22 0.22 0.04 0 0 0</pose>
+        <geometry><cylinder><radius>0.025</radius><length>0.04</length></cylinder></geometry>
+        <material><diffuse>0.1 0.1 0.1 1</diffuse></material>
+      </visual>
+      <visual name="motor_rr">
+        <pose>-0.22 -0.22 0.04 0 0 0</pose>
+        <geometry><cylinder><radius>0.025</radius><length>0.04</length></cylinder></geometry>
+        <material><diffuse>0.1 0.1 0.1 1</diffuse></material>
+      </visual>
+      <visual name="motor_rl">
+        <pose>-0.22 0.22 0.04 0 0 0</pose>
+        <geometry><cylinder><radius>0.025</radius><length>0.04</length></cylinder></geometry>
+        <material><diffuse>0.1 0.1 0.1 1</diffuse></material>
+      </visual>
+
+      <!-- ── Pervane diskleri (dönen pervane temsili) ── -->
+      <visual name="prop_fr">
+        <pose>0.22 -0.22 0.065 0 0 0</pose>
+        <geometry><cylinder><radius>0.1</radius><length>0.005</length></cylinder></geometry>
+        <material><ambient>0.8 0.8 0.8 0.4</ambient><diffuse>0.9 0.9 0.9 0.4</diffuse></material>
+      </visual>
+      <visual name="prop_fl">
+        <pose>0.22 0.22 0.065 0 0 0</pose>
+        <geometry><cylinder><radius>0.1</radius><length>0.005</length></cylinder></geometry>
+        <material><ambient>0.8 0.8 0.8 0.4</ambient><diffuse>0.9 0.9 0.9 0.4</diffuse></material>
+      </visual>
+      <visual name="prop_rr">
+        <pose>-0.22 -0.22 0.065 0 0 0</pose>
+        <geometry><cylinder><radius>0.1</radius><length>0.005</length></cylinder></geometry>
+        <material><ambient>0.8 0.8 0.8 0.4</ambient><diffuse>0.9 0.9 0.9 0.4</diffuse></material>
+      </visual>
+      <visual name="prop_rl">
+        <pose>-0.22 0.22 0.065 0 0 0</pose>
+        <geometry><cylinder><radius>0.1</radius><length>0.005</length></cylinder></geometry>
+        <material><ambient>0.8 0.8 0.8 0.4</ambient><diffuse>0.9 0.9 0.9 0.4</diffuse></material>
+      </visual>
+
+      <!-- ── Yön göstergesi (ön taraf - kırmızı ok) ── -->
+      <visual name="front_indicator">
+        <pose>0.18 0 -0.02 0 0 0</pose>
+        <geometry>
+          <box><size>0.06 0.02 0.01</size></box>
+        </geometry>
+        <material>
+          <ambient>1 0 0 1</ambient>
+          <diffuse>1 0 0 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- ══════════════════════════════════════════════
+           SENSÖRLER
+           ══════════════════════════════════════════════ -->
+
+      <!-- ── 3D LiDAR (üstte, 360° tarama) ── -->
+      <sensor name="lidar_3d" type="gpu_lidar">
+        <pose>0 0 0.08 0 0 0</pose>
+        <always_on>true</always_on>
+        <update_rate>10</update_rate>
+        <topic>lidar/points</topic>
+        <visualize>true</visualize>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>360</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.14159</min_angle>
+              <max_angle>3.14159</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>16</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.261799</min_angle>   <!-- -15 derece -->
+              <max_angle>0.261799</max_angle>    <!-- +15 derece -->
+            </vertical>
+          </scan>
+          <range>
+            <min>0.2</min>
+            <max>25.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0</mean>
+            <stddev>0.005</stddev>
+          </noise>
+        </ray>
+      </sensor>
+
+      <!-- ── LiDAR visual temsili ── -->
+      <visual name="lidar_visual">
+        <pose>0 0 0.08 0 0 0</pose>
+        <geometry><cylinder><radius>0.03</radius><length>0.04</length></cylinder></geometry>
+        <material>
+          <ambient>0.0 0.0 0.8 1</ambient>
+          <diffuse>0.0 0.0 1.0 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- ── Ön Kamera (kapı numarası tanıma için) ── -->
+      <sensor name="front_camera" type="camera">
+        <pose>0.18 0 0 0 0 0</pose>
+        <always_on>true</always_on>
+        <update_rate>15</update_rate>
+        <topic>camera</topic>
+        <visualize>true</visualize>
+        <camera>
+          <horizontal_fov>1.3962634</horizontal_fov>  <!-- ~80 derece -->
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>50</far>
+          </clip>
+          <noise>
+            <type>gaussian</type>
+            <mean>0</mean>
+            <stddev>0.007</stddev>
+          </noise>
+        </camera>
+      </sensor>
+
+      <!-- ── Kamera visual temsili ── -->
+      <visual name="camera_visual">
+        <pose>0.18 0 0 0 0 0</pose>
+        <geometry><box><size>0.02 0.03 0.02</size></box></geometry>
+        <material>
+          <ambient>0.0 0.6 0.0 1</ambient>
+          <diffuse>0.0 0.8 0.0 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- ── IMU Sensörü ── -->
+      <sensor name="imu_sensor" type="imu">
+        <always_on>true</always_on>
+        <update_rate>200</update_rate>
+        <topic>imu</topic>
+        <imu>
+          <angular_velocity>
+            <x>
+              <noise type="gaussian">
+                <mean>0</mean>
+                <stddev>0.0002</stddev>
+              </noise>
+            </x>
+            <y>
+              <noise type="gaussian">
+                <mean>0</mean>
+                <stddev>0.0002</stddev>
+              </noise>
+            </y>
+            <z>
+              <noise type="gaussian">
+                <mean>0</mean>
+                <stddev>0.0002</stddev>
+              </noise>
+            </z>
+          </angular_velocity>
+          <linear_acceleration>
+            <x>
+              <noise type="gaussian">
+                <mean>0</mean>
+                <stddev>0.017</stddev>
+              </noise>
+            </x>
+            <y>
+              <noise type="gaussian">
+                <mean>0</mean>
+                <stddev>0.017</stddev>
+              </noise>
+            </y>
+            <z>
+              <noise type="gaussian">
+                <mean>0</mean>
+                <stddev>0.017</stddev>
+              </noise>
+            </z>
+          </linear_acceleration>
+        </imu>
+      </sensor>
+
+    </link>
+
+    <!-- ══════════════════════════════════════════════
+         GAZEBO SYSTEM PLUGINS
+         ══════════════════════════════════════════════ -->
+
+    <!-- Pose yayınlama (odometry) -->
+    <plugin filename="gz-sim-odometry-publisher-system"
+            name="gz::sim::systems::OdometryPublisher">
+      <odom_frame>odom</odom_frame>
+      <robot_base_frame>base_link</robot_base_frame>
+      <odom_topic>odometry</odom_topic>
+      <dimensions>3</dimensions>
+    </plugin>
+
+    <!-- Pose & Twist ile hareket kontrolü (test için) -->
+    <plugin filename="gz-sim-pose-publisher-system"
+            name="gz::sim::systems::PosePublisher">
+      <publish_link_pose>true</publish_link_pose>
+      <publish_nested_model_pose>true</publish_nested_model_pose>
+      <use_pose_vector_msg>true</use_pose_vector_msg>
+      <update_frequency>50</update_frequency>
+    </plugin>
+
+  </model>
+</sdf>

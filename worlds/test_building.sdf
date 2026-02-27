@@ -109,5 +109,11 @@
       <pose>0 0 0 0 0 0</pose>
     </include>
 
+    <!--
+      Drone, PX4 SITL tarafından spawn edilir.
+      Manuel test için simple_drone burada bırakılabilir,
+      PX4 SITL kullanılırken bu kısım otomatik atlanır.
+    -->
+
   </world>
 </sdf>
