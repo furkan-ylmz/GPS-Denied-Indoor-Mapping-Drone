@@ -1,24 +1,15 @@
 """
-Drone Teleop — Klavye ile drone kontrolü
-─────────────────────────────────────────
-Basit bir test aracı. Klavyeden waypoint gönderir.
-
-Kontroller:
-  w/s     : İleri / Geri (x ekseni)
-  a/d     : Sol / Sağ (y ekseni)
-  q/e     : Yukarı / Aşağı (z ekseni)
-  t       : Takeoff (arm + offboard + kalkış)
-  l       : Land (iniş)
-  SPACE   : Yerinde dur (hover)
-  Ctrl+C  : Çıkış
-
-Kullanım:
-  ros2 run px4_offboard drone_teleop
+Drone Teleop - Klavye ile drone kontrolu
+ROS spin ayri thread'de calisir, heartbeat hic kesilmez.
+QoS: PX4 uRTPS bridge uyumlu.
 """
 
 import sys
 import termios
 import tty
+import threading
+import select
+import time
 
 import rclpy
 from rclpy.node import Node
@@ -34,66 +25,69 @@ from px4_msgs.msg import (
 
 
 HELP_TEXT = """
-╔═══════════════════════════════════════════╗
-║         Drone Teleop Kontrolü             ║
-╠═══════════════════════════════════════════╣
-║  w/s : İleri (+x) / Geri (-x)  [0.5m]   ║
-║  a/d : Sol (+y) / Sağ (-y)     [0.5m]   ║
-║  q/e : Yukarı / Aşağı          [0.3m]   ║
-║  t   : Takeoff                           ║
-║  l   : Land                              ║
-║  SPC : Hover (yerinde dur)               ║
-║  ESC : Çıkış                             ║
-╚═══════════════════════════════════════════╝
++-------------------------------------------+
+|         Drone Teleop Kontrolu             |
++-------------------------------------------+
+|  t   : Arm + Offboard + Takeoff          |
+|  w/s : Ileri (+x) / Geri (-x)  [0.5m]   |
+|  a/d : Sol (+y) / Sag (-y)     [0.5m]   |
+|  q/e : Yukari / Asagi          [0.3m]   |
+|  l   : Land                              |
+|  SPC : Hover (yerinde dur)               |
+|  ESC : Cikis                             |
++-------------------------------------------+
+  NOT: Once 't' ile arm+takeoff yapin!
 """
-
-
-def get_key():
-    """Tek tuş okuma (blocking)."""
-    fd = sys.stdin.fileno()
-    old_settings = termios.tcgetattr(fd)
-    try:
-        tty.setraw(fd)
-        ch = sys.stdin.read(1)
-    finally:
-        termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
-    return ch
 
 
 class DroneTeleop(Node):
     def __init__(self):
         super().__init__("drone_teleop")
 
-        self.declare_parameter("step_xy", 0.5)
-        self.declare_parameter("step_z", 0.3)
-        self.declare_parameter("takeoff_height", 1.5)
+        self.step_xy = 0.5
+        self.step_z = 0.3
+        self.takeoff_height = 1.5
 
-        self.step_xy = self.get_parameter("step_xy").value
-        self.step_z = self.get_parameter("step_z").value
-        self.takeoff_height = self.get_parameter("takeoff_height").value
-
-        qos = QoSProfile(
+        # PX4 icin publisher QoS - RELIABLE + VOLATILE
+        pub_qos = QoSProfile(
             reliability=ReliabilityPolicy.BEST_EFFORT,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
             history=HistoryPolicy.KEEP_LAST,
             depth=1,
         )
 
-        self.offboard_pub = self.create_publisher(OffboardControlMode, "/fmu/in/offboard_control_mode", qos)
-        self.setpoint_pub = self.create_publisher(TrajectorySetpoint, "/fmu/in/trajectory_setpoint", qos)
-        self.cmd_pub = self.create_publisher(VehicleCommand, "/fmu/in/vehicle_command", qos)
-        self.pos_sub = self.create_subscription(VehicleLocalPosition, "/fmu/out/vehicle_local_position", self._pos_cb, qos)
-        self.status_sub = self.create_subscription(VehicleStatus, "/fmu/out/vehicle_status", self._status_cb, qos)
+        # PX4 icin subscriber QoS - BEST_EFFORT
+        sub_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST,
+            depth=1,
+        )
+
+        self.offboard_pub = self.create_publisher(
+            OffboardControlMode, "/fmu/in/offboard_control_mode", pub_qos)
+        self.setpoint_pub = self.create_publisher(
+            TrajectorySetpoint, "/fmu/in/trajectory_setpoint", pub_qos)
+        self.cmd_pub = self.create_publisher(
+            VehicleCommand, "/fmu/in/vehicle_command", pub_qos)
+
+        self.pos_sub = self.create_subscription(
+            VehicleLocalPosition, "/fmu/out/vehicle_local_position",
+            self._pos_cb, sub_qos)
+        self.status_sub = self.create_subscription(
+            VehicleStatus, "/fmu/out/vehicle_status",
+            self._status_cb, sub_qos)
 
         self.position = [0.0, 0.0, 0.0]
         self.target = [0.0, 0.0, -self.takeoff_height]
         self.armed = False
-        self.offboard = False
+        self.nav_state = 0
+        self.offboard_counter = 0
 
-        # 20 Hz offboard heartbeat
-        self.timer = self.create_timer(0.05, self._heartbeat)
+        # 10 Hz heartbeat (kararlilk icin)
+        self.timer = self.create_timer(0.1, self._heartbeat)
 
-        self.get_logger().info("Drone Teleop başlatıldı")
+        self.get_logger().info("Drone Teleop baslatildi")
         print(HELP_TEXT)
 
     def _pos_cb(self, msg):
@@ -101,28 +95,32 @@ class DroneTeleop(Node):
 
     def _status_cb(self, msg):
         self.armed = msg.arming_state == VehicleStatus.ARMING_STATE_ARMED
+        self.nav_state = msg.nav_state
 
     def _heartbeat(self):
-        """Offboard modunu canlı tut."""
+        ts = int(self.get_clock().now().nanoseconds / 1000)
+
         mode = OffboardControlMode()
         mode.position = True
         mode.velocity = False
         mode.acceleration = False
         mode.attitude = False
         mode.body_rate = False
-        mode.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        mode.timestamp = ts
         self.offboard_pub.publish(mode)
 
         sp = TrajectorySetpoint()
-        sp.position = self.target.copy()
-        sp.yaw = float("nan")
-        sp.timestamp = int(self.get_clock().now().nanoseconds / 1000)
+        sp.position = [float(self.target[0]), float(self.target[1]), float(self.target[2])]
+        sp.yaw = 0.0
+        sp.timestamp = ts
         self.setpoint_pub.publish(sp)
+
+        self.offboard_counter += 1
 
     def _send_cmd(self, cmd, p1=0.0, p2=0.0):
         msg = VehicleCommand()
-        msg.param1 = p1
-        msg.param2 = p2
+        msg.param1 = float(p1)
+        msg.param2 = float(p2)
         msg.command = cmd
         msg.target_system = 1
         msg.target_component = 1
@@ -132,64 +130,81 @@ class DroneTeleop(Node):
         msg.timestamp = int(self.get_clock().now().nanoseconds / 1000)
         self.cmd_pub.publish(msg)
 
-    def takeoff(self):
+    def do_takeoff(self):
         self.target = [0.0, 0.0, -self.takeoff_height]
+        print("  Setpoint gonderiyor (2 saniye bekleniyor)...")
+
+        # PX4 offboard'a gecmeden once en az 1-2 sn setpoint istiyor
+        time.sleep(2.0)
+
+        # Offboard mode
         self._send_cmd(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, 1.0, 6.0)
+        time.sleep(0.5)
+
+        # Arm
         self._send_cmd(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0)
-        self.get_logger().info(f"TAKEOFF → yükseklik {self.takeoff_height}m")
+        print(f"  [ARM + OFFBOARD] Takeoff -> {self.takeoff_height}m")
 
-    def land_cmd(self):
+    def do_land(self):
         self._send_cmd(VehicleCommand.VEHICLE_CMD_NAV_LAND)
-        self.get_logger().info("LAND komutu gönderildi")
+        print("  [LAND] Inis komutu gonderildi")
 
-    def run(self):
+    def run_keyboard(self):
+        fd = sys.stdin.fileno()
+        old_settings = termios.tcgetattr(fd)
         try:
+            tty.setcbreak(fd)
             while rclpy.ok():
-                rclpy.spin_once(self, timeout_sec=0.01)
-                key = get_key()
-
-                if key == "t":
-                    self.takeoff()
-                elif key == "l":
-                    self.land_cmd()
-                elif key == "w":
-                    self.target[0] += self.step_xy
-                    print(f"  → İleri  | Hedef: x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
-                elif key == "s":
-                    self.target[0] -= self.step_xy
-                    print(f"  → Geri   | Hedef: x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
-                elif key == "a":
-                    self.target[1] += self.step_xy
-                    print(f"  → Sol    | Hedef: x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
-                elif key == "d":
-                    self.target[1] -= self.step_xy
-                    print(f"  → Sağ    | Hedef: x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
-                elif key == "q":
-                    self.target[2] -= self.step_z  # NED: z negatif = yukarı
-                    print(f"  → Yukarı | Hedef: x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
-                elif key == "e":
-                    self.target[2] += self.step_z
-                    print(f"  → Aşağı  | Hedef: x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
-                elif key == " ":
-                    self.target = list(self.position)
-                    print(f"  → HOVER  | Pozisyon: x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
-                elif key == "\x1b" or key == "\x03":  # ESC or Ctrl+C
-                    break
-        except Exception as e:
-            self.get_logger().error(f"Hata: {e}")
+                if select.select([sys.stdin], [], [], 0.1)[0]:
+                    key = sys.stdin.read(1)
+                    if key == "t":
+                        self.do_takeoff()
+                    elif key == "l":
+                        self.do_land()
+                    elif key == "w":
+                        self.target[0] += self.step_xy
+                        print(f"  > Ileri  | x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
+                    elif key == "s":
+                        self.target[0] -= self.step_xy
+                        print(f"  > Geri   | x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
+                    elif key == "a":
+                        self.target[1] += self.step_xy
+                        print(f"  > Sol    | x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
+                    elif key == "d":
+                        self.target[1] -= self.step_xy
+                        print(f"  > Sag    | x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
+                    elif key == "q":
+                        self.target[2] -= self.step_z
+                        print(f"  > Yukari | x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
+                    elif key == "e":
+                        self.target[2] += self.step_z
+                        print(f"  > Asagi  | x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
+                    elif key == " ":
+                        self.target = list(self.position)
+                        print(f"  > HOVER  | x={self.target[0]:.1f} y={self.target[1]:.1f} z={self.target[2]:.1f}")
+                    elif key in ("\x1b", "\x03"):
+                        break
+        except KeyboardInterrupt:
+            pass
         finally:
-            self.land_cmd()
+            termios.tcsetattr(fd, termios.TCSADRAIN, old_settings)
+            self.do_land()
 
 
 def main(args=None):
     rclpy.init(args=args)
     node = DroneTeleop()
 
+    # ROS spin ayri thread'de - heartbeat hic kesilmez
+    spin_thread = threading.Thread(target=rclpy.spin, args=(node,), daemon=True)
+    spin_thread.start()
+
     try:
-        node.run()
+        node.run_keyboard()
     finally:
         node.destroy_node()
         rclpy.shutdown()
+        spin_thread.join(timeout=1.0)
 
 
 if __name__ == "__main__":

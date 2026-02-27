@@ -1,0 +1,36 @@
+# Colcon build çıktıları
+build/
+install/
+log/
+
+# px4_msgs (build sırasında otomatik clone edilir)
+src/px4_msgs/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+*:Zone.Identifier
+
+# ROS bags
+*.bag
+*.db3
+
+# Gazebo cache
+.gz/
+
+# Core dumps
+core

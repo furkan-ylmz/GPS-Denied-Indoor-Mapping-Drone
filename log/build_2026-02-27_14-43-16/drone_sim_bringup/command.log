@@ -1,4 +1,0 @@
-Invoking command in '/root/drone_project/build/drone_sim_bringup': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy /usr/bin/cmake --build /root/drone_project/build/drone_sim_bringup -- -j16 -l16
-Invoked command in '/root/drone_project/build/drone_sim_bringup' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy /usr/bin/cmake --build /root/drone_project/build/drone_sim_bringup -- -j16 -l16
-Invoking command in '/root/drone_project/build/drone_sim_bringup': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy /usr/bin/cmake --install /root/drone_project/build/drone_sim_bringup
-Invoked command in '/root/drone_project/build/drone_sim_bringup' returned '0': CMAKE_PREFIX_PATH=${CMAKE_PREFIX_PATH}:/opt/ros/jazzy /usr/bin/cmake --install /root/drone_project/build/drone_sim_bringup

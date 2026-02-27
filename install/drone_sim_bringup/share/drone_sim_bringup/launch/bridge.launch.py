@@ -1,1 +1,0 @@
-/root/drone_project/src/drone_sim_bringup/launch/bridge.launch.py
