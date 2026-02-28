@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<sdf version="1.9">
+  <model name="x500_lidar">
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- PX4 x500 Quadrotor (temel airframe)        -->
+    <!-- ═══════════════════════════════════════════ -->
+    <include merge="true">
+      <uri>x500</uri>
+    </include>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- 3D LiDAR Sensörü (üstte, 360° tarama)     -->
+    <!-- Kapalı alan SLAM için 16 kanal LiDAR       -->
+    <!-- ═══════════════════════════════════════════ -->
+    <link name="lidar_link">
+      <pose relative_to="base_link">0 0 0.08 0 0 0</pose>
+      <inertial>
+        <mass>0.3</mass>
+        <inertia>
+          <ixx>0.0003</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.0003</iyy>
+          <iyz>0</iyz>
+          <izz>0.0002</izz>
+        </inertia>
+      </inertial>
+      <collision name="lidar_collision">
+        <geometry>
+          <cylinder>
+            <radius>0.035</radius>
+            <length>0.06</length>
+          </cylinder>
+        </geometry>
+      </collision>
+      <visual name="lidar_visual">
+        <geometry>
+          <cylinder>
+            <radius>0.035</radius>
+            <length>0.06</length>
+          </cylinder>
+        </geometry>
+        <material>
+          <ambient>0.1 0.1 0.1 1</ambient>
+          <diffuse>0.2 0.2 0.2 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- 3D LiDAR: 16 kanal, 360°, 25m menzil -->
+      <sensor name="lidar_3d" type="gpu_lidar">
+        <gz_frame_id>lidar_link</gz_frame_id>
+        <pose>0 0 0.03 0 0 0</pose>
+        <ray>
+          <scan>
+            <horizontal>
+              <samples>360</samples>
+              <resolution>1</resolution>
+              <min_angle>-3.141592653</min_angle>
+              <max_angle>3.141592653</max_angle>
+            </horizontal>
+            <vertical>
+              <samples>16</samples>
+              <resolution>1</resolution>
+              <min_angle>-0.261799</min_angle>   <!-- -15° -->
+              <max_angle>0.261799</max_angle>    <!-- +15° -->
+            </vertical>
+          </scan>
+          <range>
+            <min>0.2</min>
+            <max>25.0</max>
+            <resolution>0.01</resolution>
+          </range>
+          <noise>
+            <type>gaussian</type>
+            <mean>0.0</mean>
+            <stddev>0.005</stddev>
+          </noise>
+        </ray>
+        <always_on>1</always_on>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
+        <topic>lidar</topic>
+      </sensor>
+    </link>
+
+    <joint name="lidar_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>lidar_link</child>
+    </joint>
+
+    <!-- ═══════════════════════════════════════════ -->
+    <!-- Ön Kamera (RGB) — Kapı numarası tanıma     -->
+    <!-- ═══════════════════════════════════════════ -->
+    <link name="camera_link">
+      <pose relative_to="base_link">0.1 0 0.0 0 0 0</pose>
+      <inertial>
+        <mass>0.05</mass>
+        <inertia>
+          <ixx>0.00001</ixx>
+          <ixy>0</ixy>
+          <ixz>0</ixz>
+          <iyy>0.00001</iyy>
+          <iyz>0</iyz>
+          <izz>0.00001</izz>
+        </inertia>
+      </inertial>
+      <collision name="camera_collision">
+        <geometry>
+          <box>
+            <size>0.02 0.04 0.02</size>
+          </box>
+        </geometry>
+      </collision>
+      <visual name="camera_visual">
+        <geometry>
+          <box>
+            <size>0.02 0.04 0.02</size>
+          </box>
+        </geometry>
+        <material>
+          <ambient>0.0 0.0 0.3 1</ambient>
+          <diffuse>0.0 0.0 0.5 1</diffuse>
+        </material>
+      </visual>
+
+      <!-- RGB Kamera: 640x480, 80° FOV -->
+      <sensor name="front_camera" type="camera">
+        <gz_frame_id>camera_link</gz_frame_id>
+        <pose>0.01 0 0 0 0 0</pose>
+        <camera>
+          <horizontal_fov>1.396</horizontal_fov>  <!-- ~80° -->
+          <image>
+            <width>640</width>
+            <height>480</height>
+            <format>R8G8B8</format>
+          </image>
+          <clip>
+            <near>0.1</near>
+            <far>50</far>
+          </clip>
+        </camera>
+        <always_on>1</always_on>
+        <update_rate>15</update_rate>
+        <visualize>true</visualize>
+        <topic>camera</topic>
+      </sensor>
+    </link>
+
+    <joint name="camera_joint" type="fixed">
+      <parent>base_link</parent>
+      <child>camera_link</child>
+    </joint>
+
+  </model>
+</sdf>

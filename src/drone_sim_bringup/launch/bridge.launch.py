@@ -1,7 +1,11 @@
 """
 Gazebo <-> ROS 2 topic köprüsü.
-Sensör verilerini (lidar, kamera, IMU) Gazebo'dan ROS 2'ye aktarır.
+Sensör verilerini (lidar, kamera) Gazebo'dan ROS 2'ye aktarır.
 PX4 x500_lidar modeli için yapılandırılmış.
+
+Kullanım:
+  ros2 launch drone_sim_bringup bridge.launch.py
+  ros2 launch drone_sim_bringup bridge.launch.py gz_world:=default gz_model:=x500_lidar
 """
 
 from launch import LaunchDescription
@@ -11,65 +15,77 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    # Gazebo world/model namespace
-    # PX4 SITL drone'u "x500_lidar" adıyla spawn eder
-    gz_world = "test_building_world"
-    gz_model = "x500_lidar"
+    # ── Launch arguments ──
+    world_arg = DeclareLaunchArgument(
+        "gz_world", default_value="default",
+        description="Gazebo world adı (PX4 SITL tarafından kullanılan)")
+    model_arg = DeclareLaunchArgument(
+        "gz_model", default_value="x500_lidar",
+        description="Gazebo model adı")
 
-    # LiDAR ve kamera ayrı link'lerde
-    lidar_prefix = f"/world/{gz_world}/model/{gz_model}/link/lidar_link/sensor"
-    camera_prefix = f"/world/{gz_world}/model/{gz_model}/link/camera_link/sensor"
+    # Sensör topic'leri model'deki <topic> tag'larından gelir:
+    #   lidar_3d sensörü → /lidar
+    #   front_camera sensörü → /camera
+    # Bu topic'ler model-scoped olarak:
+    #   /model/{model_name}/lidar  ve  /model/{model_name}/camera
+    # NOT: PX4 SITL'de model adı airframe parametresine bağlı.
+    # Gazebo Harmonic'te gpu_lidar scan/points topic'i:
+    #   /world/{world}/model/{model}/link/{link}/sensor/{sensor}/scan/points
 
-    # ROS-Gazebo bridge node
+    # ── ROS-Gazebo bridge ──
+    # Gazebo sensör topic'leri (model SDF'deki <topic> tag'larından):
+    #   /lidar/points → PointCloudPacked (3D LiDAR)
+    #   /camera       → Image (RGB kamera)
+    #   /camera_info  → CameraInfo (kamera parametreleri)
     ros_gz_bridge = Node(
         package="ros_gz_bridge",
         executable="parameter_bridge",
         name="ros_gz_bridge",
         output="screen",
         arguments=[
-            # 3D LiDAR: Gazebo -> ROS 2
-            f"{lidar_prefix}/lidar_3d/scan/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked",
-            # Camera image: Gazebo -> ROS 2
-            f"{camera_prefix}/front_camera/image@sensor_msgs/msg/Image[gz.msgs.Image",
-            # Camera info: Gazebo -> ROS 2
-            f"{camera_prefix}/front_camera/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
-            # Clock: Gazebo -> ROS 2
+            # 3D LiDAR point cloud: Gazebo → ROS 2
+            "/lidar/points@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked",
+            # Camera image: Gazebo → ROS 2
+            "/camera@sensor_msgs/msg/Image[gz.msgs.Image",
+            # Camera info: Gazebo → ROS 2
+            "/camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo",
+            # Clock: Gazebo → ROS 2
             "/clock@rosgraph_msgs/msg/Clock[gz.msgs.Clock",
         ],
         remappings=[
-            (f"{lidar_prefix}/lidar_3d/scan/points", "/drone/lidar/points"),
-            (f"{camera_prefix}/front_camera/image", "/drone/camera/image_raw"),
-            (f"{camera_prefix}/front_camera/camera_info", "/drone/camera/camera_info"),
+            ("/lidar/points", "/drone/lidar/points"),
+            ("/camera", "/drone/camera/image_raw"),
+            ("/camera_info", "/drone/camera/camera_info"),
         ],
     )
 
-    # TF static: base_link -> sensor frame'leri
+    # ── TF static: base_link → sensor frame'leri ──
     lidar_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
         name="lidar_tf",
-        arguments=["0", "0", "0.08", "0", "0", "0", "base_link", "lidar_frame"],
+        arguments=[
+            "--x", "0", "--y", "0", "--z", "0.08",
+            "--roll", "0", "--pitch", "0", "--yaw", "0",
+            "--frame-id", "base_link", "--child-frame-id", "lidar_link",
+        ],
     )
 
     camera_tf = Node(
         package="tf2_ros",
         executable="static_transform_publisher",
         name="camera_tf",
-        arguments=["0.15", "0", "-0.02", "0", "0.1", "0", "base_link", "camera_frame"],
+        arguments=[
+            "--x", "0.1", "--y", "0", "--z", "0",
+            "--roll", "0", "--pitch", "0", "--yaw", "0",
+            "--frame-id", "base_link", "--child-frame-id", "camera_link",
+        ],
     )
 
-    imu_tf = Node(
-        package="tf2_ros",
-        executable="static_transform_publisher",
-        name="imu_tf",
-        arguments=["0", "0", "0", "0", "0", "0", "base_link", "imu_frame"],
-    )
-
-    return LaunchDescription(
-        [
-            ros_gz_bridge,
-            lidar_tf,
-            camera_tf,
-            imu_tf,
-        ]
-    )
+    return LaunchDescription([
+        world_arg,
+        model_arg,
+        ros_gz_bridge,
+        lidar_tf,
+        camera_tf,
+    ])

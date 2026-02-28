@@ -23,6 +23,7 @@ setup(
         "console_scripts": [
             "offboard_control = px4_offboard.offboard_control:main",
             "drone_teleop = px4_offboard.drone_teleop:main",
+            "odom_publisher = px4_offboard.odom_publisher:main",
         ],
     },
 )

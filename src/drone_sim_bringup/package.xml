@@ -19,6 +19,8 @@
   <exec_depend>nav2_bringup</exec_depend>
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
+  <exec_depend>rtabmap_ros</exec_depend>
+  <exec_depend>px4_offboard</exec_depend>
 
   <export>
     <build_type>ament_cmake</build_type>
