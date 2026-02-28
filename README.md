@@ -1,36 +1,39 @@
 # Kapalı Alan Otonom Drone Projesi
 
-> 2 katlı kapalı bir binada 3D LiDAR ile harita çıkartan, otonom hareket eden ve kapı numaralarını tanıyan drone sistemi.
+> 2 katlı kapalı bir binada 3D LiDAR SLAM ile harita çıkartan, Nav2 ile otonom navigasyon yapan ve kapı numaralarını tanıyacak drone sistemi.
 
 ## Genel Bakış
 
-Bu proje, kapalı bir alanda (2 katlı bina) çalışacak bir otonom drone sistemi geliştirmeyi amaçlamaktadır:
-
-| Bileşen | Açıklama |
-|---------|----------|
-| **3D LiDAR SLAM** | Binanın 3 boyutlu haritasını çıkartma |
-| **Otonom Navigasyon** | Harita üzerinde otonom uçuş ve path planning |
-| **Kapı Tanıma (OCR)** | Kamera ile kapı numaralarını okuma ve haritada işaretleme |
-| **PX4 + Pixhawk 6C** | Uçuş kontrolü (simülasyonda SITL) |
+| Bileşen | Açıklama | Durum |
+|---------|----------|-------|
+| **3D LiDAR SLAM** | RTAB-Map ICP ile kapalı alan haritalama | ✅ Çalışıyor |
+| **Otonom Navigasyon** | Nav2 path planning + PX4 position control | ✅ Çalışıyor |
+| **Offboard Uçuş** | PX4 offboard mod, arm/takeoff/hover/navigate/land | ✅ Çalışıyor |
+| **Sensör Füzyonu** | 16 kanal 3D LiDAR + RGB kamera | ✅ Çalışıyor |
+| **Kapı Tanıma (OCR)** | Kamera ile kapı numaralarını okuma | ⬜ Planlanıyor |
 
 ## Sistem Mimarisi
 
 ```
 WSL2 (Ubuntu 24.04)
-─────────────────────────────────────────────────────
-  PX4 SITL ◄──► Micro XRCE-DDS Agent ◄──► ROS 2 Jazzy
-  (gz_x500)           (UDP 8888)            │
-      │                                     ├─ px4_offboard (kontrol)
-      ▼                                     ├─ SLAM (planlanan)
-  Gazebo Harmonic ◄──► ros_gz_bridge ◄─────►├─ Nav2 (planlanan)
-      │                                     └─ OCR (planlanan)
+═══════════════════════════════════════════════════════════════
+  PX4 SITL ◄────► Micro XRCE-DDS Agent ◄────► ROS 2 Jazzy
+  (gz_x500_lidar)        (UDP 8888)              │
+      │                                          ├─ odom_publisher (NED→ENU + TF)
+      │                                          ├─ offboard_control / drone_navigator
+      ▼                                          ├─ RTAB-Map (ICP SLAM)
+  Gazebo Harmonic ◄──► ros_gz_bridge ◄──────────►├─ Nav2 Planner (path planning)
+      │                                          └─ RViz2 (görselleştirme)
    ┌──┴──┐
-   │Bina │    Sensör Topics:         PX4 Topics:
-   │.obj │    /drone/lidar/points    /fmu/in/*
-   └─────┘    /drone/camera          /fmu/out/*
+   │Bina │   Sensörler:              PX4 Topics:
+   │ SDF │   /drone/lidar/points     /fmu/in/trajectory_setpoint
+   └─────┘   /drone/camera/image_raw /fmu/out/vehicle_odometry
+
+  TF Zinciri:  map → odom → base_link → lidar_link
+                                      → camera_link
 ```
 
-## Donanım (Gerçek Sistem)
+## Donanım (Gerçek Sistem — Hedef)
 
 | Donanım | Görev |
 |---------|-------|
@@ -38,7 +41,7 @@ WSL2 (Ubuntu 24.04)
 | Hailo 26T AI HAT | Yapay zeka çıkarımı (OCR, nesne tespiti) |
 | Pixhawk 6C | Uçuş kontrol kartı (flight controller) |
 | 3D LiDAR | Ortam haritalaması |
-| Kamera | Kapı numarası tanıma |
+| RGB Kamera | Kapı numarası tanıma |
 
 ## Yazılım Ortamı
 
@@ -47,10 +50,10 @@ WSL2 (Ubuntu 24.04)
 | Host OS | Windows + WSL2 (Ubuntu 24.04 Noble) |
 | ROS 2 | Jazzy Jalisco |
 | Simülatör | Gazebo Harmonic (gz-sim) |
-| Uçuş Kontrolü | PX4 Autopilot SITL |
-| PX4 ↔ ROS 2 | Micro XRCE-DDS Agent |
-| SLAM | RTAB-Map *(planlanan)* |
-| Navigasyon | Nav2 *(planlanan)* |
+| Uçuş Kontrolü | PX4 Autopilot SITL (main branch) |
+| PX4 ↔ ROS 2 | Micro XRCE-DDS Agent (UDP 8888) |
+| SLAM | RTAB-Map v0.22.1 (ICP, 3D LiDAR) |
+| Navigasyon | Nav2 (NavfnPlanner + Global Costmap) |
 | OCR | EasyOCR / PaddleOCR *(planlanan)* |
 
 ## Proje Yapısı
@@ -61,56 +64,62 @@ drone_project/
 ├── .gitignore
 │
 ├── models/
-│   └── test/                               # Bina modeli
-│       ├── model.config
-│       ├── model.sdf
-│       └── meshes/
-│           └── test.obj                    # Blender'dan export
-│
-├── worlds/
-│   └── test_building.sdf                  # Gazebo world (fizik + sensör plugin'leri)
+│   ├── x500_lidar/                  # PX4 drone + 3D LiDAR + kamera
+│   │   ├── model.config
+│   │   └── model.sdf               # 16-ch LiDAR (25m, 10Hz) + RGB cam
+│   └── test/                        # Bina modeli
+│       ├── model.config / model.sdf
+│       └── meshes/test.obj
 │
 ├── src/
-│   ├── px4_offboard/                       # Offboard kontrol paketi (ament_python)
-│   │   ├── package.xml
-│   │   ├── setup.py / setup.cfg
+│   ├── px4_offboard/                # Uçuş kontrol paketi (ament_python)
+│   │   ├── package.xml / setup.py
 │   │   └── px4_offboard/
-│   │       ├── offboard_control.py         # Otomatik offboard uçuş
-│   │       └── drone_teleop.py             # Klavye ile drone kontrolü
+│   │       ├── offboard_control.py  # Otomatik arm + takeoff + hover
+│   │       ├── drone_teleop.py      # Klavye ile uçuş (wasd)
+│   │       ├── odom_publisher.py    # PX4 NED→ENU + TF (odom→base_link)
+│   │       └── drone_navigator.py   # Nav2 + PX4 otonom navigasyon
 │   │
-│   └── drone_sim_bringup/                  # Launch & config paketi (ament_cmake)
-│       ├── package.xml / CMakeLists.txt
-│       ├── config/drone_sim.rviz
-│       └── launch/
-│           ├── gazebo.launch.py            # Sadece Gazebo
-│           ├── bridge.launch.py            # Gazebo ↔ ROS 2 köprüsü
-│           └── sim_bringup.launch.py       # Tüm sistemi başlat
+│   ├── drone_sim_bringup/           # Launch & config paketi (ament_cmake)
+│   │   ├── package.xml / CMakeLists.txt
+│   │   ├── config/
+│   │   │   ├── slam_view.rviz       # SLAM + Navigasyon RViz konfigürasyonu
+│   │   │   └── nav2_params.yaml     # Nav2 planner + costmap parametreleri
+│   │   └── launch/
+│   │       ├── bridge.launch.py     # Gazebo ↔ ROS 2 sensör köprüsü + TF
+│   │       ├── slam.launch.py       # RTAB-Map SLAM + odom_publisher
+│   │       ├── nav2.launch.py       # Nav2 planner + lifecycle manager
+│   │       └── view_slam.launch.py  # RViz2 görselleştirme
+│   │
+│   └── px4_msgs/                    # PX4 mesaj tanımları (auto-clone)
 │
-└── scripts/
-    ├── build_workspace.sh                  # colcon build (px4_msgs auto-clone)
-    ├── run_px4_sitl.sh                     # PX4 SITL + Gazebo başlat
-    └── run_ros_bridge.sh                   # Sensör bridge
+├── scripts/
+│   ├── start_all.sh                 # Tek komutla tüm sistemi başlat
+│   ├── stop_all.sh                  # Tüm süreçleri temiz durdur
+│   ├── build_workspace.sh           # colcon build
+│   ├── run_px4_sitl.sh              # PX4 SITL başlatma
+│   └── run_ros_bridge.sh            # Sensör bridge
+│
+└── worlds/
+    └── test_building.sdf            # Gazebo world
 ```
 
-> **Not:** `src/px4_msgs/` build sırasında otomatik clone edilir, repoda tutulmaz.
-
 ## Ön Gereksinimler
-
-Aşağıdakiler WSL2 Ubuntu 24.04 üzerinde kurulu olmalıdır:
 
 | Bileşen | Kurulum | Konum |
 |---------|---------|-------|
 | ROS 2 Jazzy | `sudo apt install ros-jazzy-desktop` | `/opt/ros/jazzy` |
-| Gazebo + ROS bridge | `sudo apt install ros-jazzy-ros-gz ros-jazzy-ros-gz-bridge` | sistem |
-| PX4 Autopilot | `git clone --recursive https://github.com/PX4/PX4-Autopilot` + `make px4_sitl_default` | `~/PX4-Autopilot` |
-| Micro XRCE-DDS Agent | [Build from source](https://micro-xrce-dds.docs.eprosima.com/) | `~/Micro-XRCE-DDS-Agent` |
+| Gazebo + Bridge | `sudo apt install ros-jazzy-ros-gz ros-jazzy-ros-gz-bridge` | sistem |
+| PX4 Autopilot | `git clone --recursive .../PX4-Autopilot && make px4_sitl_default` | `~/PX4-Autopilot` |
+| XRCE-DDS Agent | [Build from source](https://micro-xrce-dds.docs.eprosima.com/) | `~/Micro-XRCE-DDS-Agent` |
+| RTAB-Map | `sudo apt install ros-jazzy-rtabmap-ros` | sistem |
+| Nav2 | `sudo apt install ros-jazzy-nav2-planner ros-jazzy-nav2-lifecycle-manager ros-jazzy-nav2-costmap-2d ros-jazzy-nav2-navfn-planner` | sistem |
 
 `~/.bashrc` ayarları:
 ```bash
 source /opt/ros/jazzy/setup.bash
 export GZ_SIM_RESOURCE_PATH="$HOME/drone_project/models:$HOME/PX4-Autopilot/Tools/simulation/gz/models"
 export GZ_SIM_SYSTEM_PLUGIN_PATH="$HOME/PX4-Autopilot/build/px4_sitl_default/build_gz_plugins"
-export PX4_ROOT="$HOME/PX4-Autopilot"
 ```
 
 ## Kurulum ve Build
@@ -118,61 +127,146 @@ export PX4_ROOT="$HOME/PX4-Autopilot"
 ```bash
 cd ~/drone_project
 bash scripts/build_workspace.sh
+# veya:
+source /opt/ros/jazzy/setup.bash
+colcon build --symlink-install --parallel-workers 1  # px4_msgs OOM önlemi
 ```
 
 ## Çalıştırma
 
-**3 ayrı terminal** açın:
+### Tek Komutla Başlatma (Önerilen)
+
+```bash
+cd ~/drone_project
+
+# Nav2 Otonom Navigasyon — RViz2'den hedef belirleme
+bash scripts/start_all.sh nav
+
+# Offboard Hover — otomatik kalkış + havada bekle
+bash scripts/start_all.sh
+
+# Klavye Teleop — wasd kontrolü
+bash scripts/start_all.sh teleop
+
+# RViz2 olmadan (headless test)
+bash scripts/start_all.sh nav novis
+bash scripts/start_all.sh novis
+```
+
+### Durdurma
+
+```bash
+bash scripts/stop_all.sh    # Tüm süreçleri temiz durdur
+# veya Ctrl+C               # Foreground process'i durdur
+```
+
+### Manuel Başlatma (Ayrı Terminaller)
 
 ```bash
 # Terminal 1 — PX4 SITL + Gazebo
-bash ~/drone_project/scripts/run_px4_sitl.sh          # custom world
-bash ~/drone_project/scripts/run_px4_sitl.sh default   # default world
+cd ~/PX4-Autopilot && HEADLESS=1 make px4_sitl gz_x500_lidar
 
-# Terminal 2 — Micro XRCE-DDS Agent (PX4 ↔ ROS 2 köprüsü)
-MicroXRCEAgent udp4 -p 8888
+# Terminal 2 — DDS Agent
+cd ~/Micro-XRCE-DDS-Agent && MicroXRCEAgent udp4 -p 8888
 
-# Terminal 3 — Drone Kontrol
+# Terminal 3 — Bridge + SLAM
 source ~/drone_project/install/setup.bash
-ros2 run px4_offboard offboard_control   # otomatik uçuş
-ros2 run px4_offboard drone_teleop       # klavye kontrolü
+ros2 launch drone_sim_bringup bridge.launch.py
+# (yeni terminal) ros2 launch drone_sim_bringup slam.launch.py
+
+# Terminal 4 — Nav2 + Navigator
+ros2 launch drone_sim_bringup nav2.launch.py
+# (yeni terminal) ros2 run px4_offboard drone_navigator
+
+# Terminal 5 — RViz2
+ros2 launch drone_sim_bringup view_slam.launch.py
 ```
 
-### PX4 Konsolundan Hızlı Test
+## RViz2'de Canlı Görselleştirme
 
-PX4 shell (pxh>) açıldıktan sonra:
+| Katman | Renk | Topic | Açıklama |
+|--------|------|-------|----------|
+| 2D Map | Gri tonları | `/map` | RTAB-Map occupancy grid |
+| 3D Cloud Map | Mavi→Kırmızı | `/cloud_map` | Biriken 3D nokta bulutu |
+| LiDAR Points | Yeşil | `/drone/lidar/points` | Canlı 16-ch LiDAR |
+| Planned Path | Mor | `/drone/planned_path` | Nav2 planlanan yol |
+| Global Costmap | Renkli | `/global_costmap/costmap` | Engel + inflation |
+| Odometry | Sarı oklar | `/drone/odom` | Drone izlediği yol |
+| Camera | RGB | `/drone/camera/image_raw` | Ön kamera akış |
+| TF | RGB eksenleri | TF | map→odom→base_link zinciri |
+
+**Nav2 ile hedef gönderme:** RViz2 toolbar'da **"2D Nav Goal"** butonuna tıkla, haritada hedef noktayı seç.
+
+## Teknik Detaylar
+
+### PX4 Topic'leri (DDS Versiyonlu)
+
+PX4 main branch'te DDS topic'leri versiyonludur:
+- Versiyon 0 → son ek yok: `/fmu/out/vehicle_odometry`
+- Versiyon N > 0 → `_vN`: `/fmu/out/vehicle_status_v2`, `/fmu/out/vehicle_local_position_v1`
+
+| Topic | Yön | Mesaj | Açıklama |
+|-------|-----|-------|----------|
+| `/fmu/out/vehicle_local_position_v1` | PX4→ROS | VehicleLocalPosition | Drone pozisyonu (NED) |
+| `/fmu/out/vehicle_status_v2` | PX4→ROS | VehicleStatus | Arm durumu, nav state |
+| `/fmu/out/vehicle_odometry` | PX4→ROS | VehicleOdometry | Odometry (NED/FRD) |
+| `/fmu/in/offboard_control_mode` | ROS→PX4 | OffboardControlMode | Offboard parametreleri |
+| `/fmu/in/trajectory_setpoint` | ROS→PX4 | TrajectorySetpoint | Hedef pozisyon (NED) |
+| `/fmu/in/vehicle_command` | ROS→PX4 | VehicleCommand | Arm, mod, land |
+
+### QoS Ayarları
+
+PX4 uXRCE-DDS: **BEST_EFFORT + VOLATILE** (tüm pub/sub için).
+
+### Koordinat Dönüşümleri
+
 ```
-pxh> commander takeoff     # kalkış
-pxh> commander land        # iniş
+PX4 (NED/FRD)           odom_publisher.py           ROS 2 (ENU/FLU)
+──────────────    ────────────────────────    ─────────────────────
+x = North         x_enu = y_ned (East)        x = East
+y = East          y_enu = x_ned (North)       y = North
+z = Down          z_enu = -z_ned (Up)         z = Up
 ```
 
-## PX4 Topic'leri
+### PX4 Airframe (4022_gz_x500_lidar)
 
-| Topic | Yön | Açıklama |
-|-------|-----|----------|
-| `/fmu/out/vehicle_local_position` | PX4→ROS | Drone pozisyonu (NED) |
-| `/fmu/out/vehicle_status` | PX4→ROS | Arm/disarm, mod durumu |
-| `/fmu/out/vehicle_odometry` | PX4→ROS | Odometry verisi |
-| `/fmu/in/offboard_control_mode` | ROS→PX4 | Offboard mod parametreleri |
-| `/fmu/in/trajectory_setpoint` | ROS→PX4 | Hedef pozisyon/hız |
-| `/fmu/in/vehicle_command` | ROS→PX4 | Arm, mod değişikliği, iniş |
+Özel airframe parametreleri (RC/GCS kontrolsüz otonom uçuş):
+```
+param set-default NAV_DLL_ACT 0       # GCS kaybında aksiyon yok
+param set-default NAV_RCL_ACT 0       # RC kaybında aksiyon yok
+param set-default COM_RCL_EXCEPT 4    # Offboard modda RC kaybı muaf
+param set-default COM_RC_IN_MODE 4    # Manuel kontrol devre dışı
+```
 
 ## Debug
 
 ```bash
-ros2 topic list                                        # tüm topic'ler
-ros2 topic echo /fmu/out/vehicle_status --once         # PX4 durumu
-ros2 topic echo /fmu/out/vehicle_local_position --once # pozisyon
-ros2 topic hz /fmu/out/sensor_combined                 # sensör frekansı
+# Topic listesi
+ros2 topic list | grep -E "drone|fmu|map|costmap"
+
+# Drone durumu (QoS önemli!)
+ros2 topic echo /fmu/out/vehicle_status_v2 \
+  --qos-reliability best_effort --qos-durability volatile --once
+
+# Pozisyon
+ros2 topic echo /fmu/out/vehicle_local_position_v1 \
+  --qos-reliability best_effort --qos-durability volatile --once
+
+# SLAM harita
+ros2 topic echo /map --once | grep -E "resolution|width|height"
+
+# TF ağacı
+ros2 run tf2_ros tf2_echo map base_link
+
+# Nav2'ye goal gönderme (CLI)
+ros2 topic pub --once /goal_pose geometry_msgs/msg/PoseStamped \
+  "{header: {frame_id: 'map'}, pose: {position: {x: 2.0, y: 2.0, z: 0.0}, orientation: {w: 1.0}}}"
+
+# Log dosyaları
+tail -f /tmp/px4_sitl.log   # PX4
+tail -f /tmp/slam.log       # RTAB-Map
+tail -f /tmp/nav2.log       # Nav2
 ```
-
-## Bina Modeli
-
-- `test.obj` — Blender 5.0.1 export
-- **`testroom2.mtl` dosyası eksik** — MTL olmadan bina gri renkte görünür
-- Önerilen: DAE (COLLADA) formatında export (Gazebo uyumluluğu daha iyi)
-
----
 
 ## Yol Haritası
 
@@ -181,67 +275,57 @@ ros2 topic hz /fmu/out/sensor_combined                 # sensör frekansı
 - [x] PX4 SITL build ve entegrasyonu
 - [x] Micro XRCE-DDS Agent (PX4 ↔ ROS 2 iletişimi)
 - [x] Bina modelini Gazebo world'e entegre etme
-- [x] `commander takeoff/land` ile temel uçuş doğrulaması
-- [x] Workspace yapısı, launch dosyaları, yardımcı script'ler
+- [x] Temel uçuş doğrulaması
 
-### Faz 2 — Offboard Drone Kontrolü 🔧 *(aktif)*
-- [ ] **ROS 2 offboard kontrol düzeltmesi** — teleop/offboard setpoint'leri PX4'e ulaşmıyor
-  - QoS profili uyumu kontrol edilmeli (BEST_EFFORT vs RELIABLE)
-  - `px4_msgs` versiyonu ile PX4 firmware uyumu doğrulanmalı
-  - `OffboardControlMode` + `TrajectorySetpoint` mesaj akışı debug
-- [ ] Teleop ile güvenilir kalkış / iniş / yön kontrolü
-- [ ] Offboard state machine testi (IDLE→ARM→TAKEOFF→HOVER→NAVIGATE→LAND)
+### Faz 2 — Offboard Drone Kontrolü ✅
+- [x] QoS düzeltmesi (BEST_EFFORT + VOLATILE)
+- [x] PX4 versiyonlu topic isimleri (_v1, _v2)
+- [x] offboard_control.py — otomatik arm/takeoff/hover state machine
+- [x] drone_teleop.py — klavye ile drone kontrolü (wasd + 20Hz heartbeat)
 
-### Faz 3 — Sensör Entegrasyonu
-- [ ] **Özel drone modeli** — x500'e 3D LiDAR + kamera ekleme (SDF model)
-- [ ] Gazebo → ROS 2 sensör bridge (lidar + kamera topic'leri)
-- [ ] LiDAR point cloud RViz'de görselleştirme
-- [ ] Kamera görüntüsü doğrulama
-- [ ] Bina modeline kapı numarası texture'ları ekleme
+### Faz 3 — Sensör Entegrasyonu ✅
+- [x] x500_lidar modeli (16-ch 3D LiDAR + RGB kamera SDF)
+- [x] PX4 airframe 4022_gz_x500_lidar + CMakeLists kaydı
+- [x] Gazebo ↔ ROS 2 bridge (lidar/points, camera, camera_info, clock)
+- [x] Static TF (base_link → lidar_link, camera_link)
+- [x] LiDAR doğrulama: 16x360 points, 8Hz, frame_id: lidar_link
 
-### Faz 4 — 3D SLAM (Haritalama)
-- [ ] RTAB-Map kurulumu ve konfigürasyonu
-- [ ] 3D LiDAR → RTAB-Map entegrasyonu
-- [ ] Odometry kaynağı (PX4 VIO / LiDAR odometry)
-- [ ] Gerçek zamanlı 3D harita oluşturma
-- [ ] Harita kaydetme ve yükleme
-- [ ] Bina içi multi-floor harita yönetimi
+### Faz 4 — 3D SLAM (Haritalama) ✅
+- [x] odom_publisher.py — PX4 NED/FRD → ROS ENU/FLU + TF odom→base_link
+- [x] RTAB-Map ICP SLAM (Reg/Strategy=1, point-to-plane, g2o optimizer)
+- [x] 2D OccupancyGrid (/map, 0.1m çözünürlük)
+- [x] 3D Point Cloud Map (/cloud_map)
+- [x] OctoMap (/octomap_binary)
+- [x] TF zinciri: map → odom → base_link → lidar_link/camera_link
+- [x] COM_RC_IN_MODE=4 ile SITL arming sorunu çözüldü
 
-### Faz 5 — Otonom Navigasyon
-- [ ] Nav2 kurulumu ve 3D costmap konfigürasyonu
-- [ ] Global planner — bina içi yol planlama
-- [ ] Local planner — engel kaçınma
-- [ ] Waypoint takibi (oda oda gezme)
-- [ ] Kat geçişi stratejisi (merdiven / asansör algılama)
+### Faz 5 — Otonom Navigasyon ✅
+- [x] Nav2 planner_server + NavfnPlanner (A\*)
+- [x] Global costmap (StaticLayer + InflationLayer, 0.1m, RTAB-Map /map)
+- [x] drone_navigator.py — Nav2 ComputePathToPose + PX4 waypoint takibi
+- [x] ENU↔NED koordinat dönüşümü (TF map→odom + swap)
+- [x] RViz2'den /goal_pose ile hedef belirleme
+- [x] /drone/planned_path görselleştirmesi
+- [x] Nav2 yoksa fallback (direkt hedefe gitme)
+- [x] start_all.sh nav modu
 
-### Faz 6 — Kapı Numarası Tanıma (OCR)
+### Faz 6 — Kapı Numarası Tanıma (OCR) ⬜
 - [ ] OCR modeli seçimi ve kurulumu (EasyOCR / PaddleOCR)
 - [ ] Kamera görüntüsünde kapı numarası tespiti
 - [ ] Tespit edilen numarayı haritada konumlandırma
-- [ ] "egc16" gibi karışık alfanumerik tanıma doğrulaması
-- [ ] ROS 2 service/action olarak OCR entegrasyonu
+- [ ] Alfanumerik tanıma doğrulaması
 
-### Faz 7 — Sistem Entegrasyonu
+### Faz 7 — Sistem Entegrasyonu ⬜
 - [ ] Tam otonom senaryo: kalkış → harita çıkar → kapıları bul → iniş
 - [ ] Davranış ağacı (behavior tree) ile görev yönetimi
-- [ ] Hata durumları yönetimi (düşük batarya, kayıp pozisyon, vb.)
-- [ ] Performans optimizasyonu
+- [ ] Hata durumları yönetimi
 
-### Faz 8 — Gerçek Donanım (Raspberry Pi 5 + Pixhawk 6C)
-- [ ] Pi 5 üzerine Ubuntu 24.04 + ROS 2 Jazzy kurulumu
-- [ ] Hailo 26T AI HAT sürücü ve SDK kurulumu
-- [ ] PX4 ↔ Pi 5 seri bağlantı (MAVROS veya XRCE-DDS)
-- [ ] Gerçek LiDAR ve kamera entegrasyonu
+### Faz 8 — Gerçek Donanım (Raspberry Pi 5 + Pixhawk 6C) ⬜
+- [ ] Pi 5 Ubuntu 24.04 + ROS 2 Jazzy + Hailo 26T sürücü
+- [ ] PX4 ↔ Pi 5 seri bağlantı (XRCE-DDS)
+- [ ] Gerçek LiDAR + kamera entegrasyonu
 - [ ] OCR modelini Hailo NPU'da çalıştırma
-- [ ] Uçuş testleri (kapalı alanda)
-
-## Ekip Görev Dağılımı
-
-| Üye | Görev |
-|-----|-------|
-| Furkan | Otonomi algoritması, kapı numarası tanıma, sistem entegrasyonu |
-| Takım Arkadaşı 1 | Bina 3D modelleme (Blender → OBJ/DAE) |
-| Takım Arkadaşı 2 | Drone fiziksel tasarım ve modelleme |
+- [ ] Uçuş testleri
 
 ## Lisans
 

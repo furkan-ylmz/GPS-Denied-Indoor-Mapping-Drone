@@ -7,18 +7,20 @@
 #   2. Micro XRCE-DDS Agent (arka plan)
 #   3. ROS-Gazebo Bridge    (arka plan)
 #   4. SLAM (odom + RTAB-Map) (arka plan)
-#   5. RViz2 görselleştirme  (arka plan, opsiyonel)
-#   6. Offboard control veya Teleop (interaktif)
+#   5. Nav2 Planner          (arka plan, sadece nav modunda)
+#   6. RViz2 görselleştirme  (arka plan, opsiyonel)
+#   7. Uçuş kontrolü         (interaktif)
 #
 # Kullanım:
-#   bash scripts/start_all.sh             # Otomatik uçuş + RViz
-#   bash scripts/start_all.sh teleop      # Teleop (klavye) + RViz
-#   bash scripts/start_all.sh novis       # Otomatik uçuş, RViz yok
-#   bash scripts/start_all.sh teleop novis # Teleop, RViz yok
+#   bash scripts/start_all.sh             # Otomatik hover (offboard_control)
+#   bash scripts/start_all.sh nav         # Nav2 otonom nav (RViz2'den hedef ver)
+#   bash scripts/start_all.sh teleop      # Klavye ile kontrol
+#   bash scripts/start_all.sh novis       # RViz2 kapalı
+#   bash scripts/start_all.sh nav novis   # Nav2 + RViz yok
 #
 # Kapatma:
 #   bash scripts/stop_all.sh
-#   veya Ctrl+C (foreground process'i kapatır, arkadakiler kalır)
+#   veya Ctrl+C (foreground process'i kapatır)
 ###############################################################################
 set -e
 
@@ -28,11 +30,12 @@ PX4_DIR="$HOME/PX4-Autopilot"
 DDS_DIR="$HOME/Micro-XRCE-DDS-Agent"
 
 # ── Argümanlar ──
-MODE="offboard"      # offboard | teleop
+MODE="offboard"      # offboard | teleop | nav
 VIS="true"           # true | false
 for arg in "$@"; do
     case "$arg" in
         teleop) MODE="teleop" ;;
+        nav)    MODE="nav" ;;
         novis)  VIS="false" ;;
     esac
 done
@@ -61,22 +64,21 @@ if [ -f "$PROJECT_DIR/install/setup.bash" ]; then
 fi
 
 echo ""
-echo -e "${GREEN}╔══════════════════════════════════════════════╗${NC}"
-echo -e "${GREEN}║   🚁 Drone SLAM Simülasyonu Başlatılıyor    ║${NC}"
-echo -e "${GREEN}║   Mod: ${YELLOW}${MODE}${GREEN}  |  RViz: ${YELLOW}${VIS}${GREEN}                  ║${NC}"
-echo -e "${GREEN}╚══════════════════════════════════════════════╝${NC}"
+echo -e "${GREEN}╔══════════════════════════════════════════════════════╗${NC}"
+echo -e "${GREEN}║        Drone SLAM Simülasyonu Başlatılıyor          ║${NC}"
+echo -e "${GREEN}║   Mod: ${YELLOW}${MODE}${GREEN}  |  RViz: ${YELLOW}${VIS}${GREEN}                            ║${NC}"
+echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
 echo ""
 
 ###############################################################################
 # 1) PX4 SITL + Gazebo
 ###############################################################################
-info "1/6 PX4 SITL + Gazebo başlatılıyor..."
+info "1/7 PX4 SITL + Gazebo başlatılıyor..."
 cd "$PX4_DIR"
 HEADLESS=1 make px4_sitl gz_x500_lidar > /tmp/px4_sitl.log 2>&1 &
 PX4_PID=$!
 echo "$PX4_PID" > /tmp/drone_sim_px4.pid
 
-# PX4 + Gazebo'nun tamamen yüklenmesini bekle
 info "     Gazebo yükleniyor (30s)..."
 for i in $(seq 1 30); do
     if grep -q "Ready for takeoff" /tmp/px4_sitl.log 2>/dev/null || \
@@ -89,7 +91,6 @@ for i in $(seq 1 30); do
 done
 echo ""
 
-# Gazebo process kontrolü
 if pgrep -f "gz sim" > /dev/null 2>&1; then
     ok "PX4 SITL + Gazebo çalışıyor (PID: $PX4_PID)"
 else
@@ -106,7 +107,7 @@ fi
 ###############################################################################
 # 2) Micro XRCE-DDS Agent
 ###############################################################################
-info "2/6 Micro XRCE-DDS Agent başlatılıyor..."
+info "2/7 Micro XRCE-DDS Agent başlatılıyor..."
 cd "$DDS_DIR"
 MicroXRCEAgent udp4 -p 8888 > /tmp/dds_agent.log 2>&1 &
 DDS_PID=$!
@@ -123,7 +124,7 @@ fi
 ###############################################################################
 # 3) ROS-Gazebo Bridge
 ###############################################################################
-info "3/6 ROS-Gazebo Bridge başlatılıyor..."
+info "3/7 ROS-Gazebo Bridge başlatılıyor..."
 cd "$PROJECT_DIR"
 ros2 launch drone_sim_bringup bridge.launch.py > /tmp/bridge.log 2>&1 &
 BRIDGE_PID=$!
@@ -140,7 +141,7 @@ fi
 ###############################################################################
 # 4) SLAM (odom_publisher + RTAB-Map)
 ###############################################################################
-info "4/6 SLAM başlatılıyor (odom_publisher + RTAB-Map)..."
+info "4/7 SLAM başlatılıyor (odom_publisher + RTAB-Map)..."
 ros2 launch drone_sim_bringup slam.launch.py > /tmp/slam.log 2>&1 &
 SLAM_PID=$!
 echo "$SLAM_PID" > /tmp/drone_sim_slam.pid
@@ -154,10 +155,29 @@ else
 fi
 
 ###############################################################################
-# 5) RViz2 Görselleştirme
+# 5) Nav2 Planner (sadece nav modunda)
+###############################################################################
+if [ "$MODE" = "nav" ]; then
+    info "5/7 Nav2 Planner başlatılıyor..."
+    ros2 launch drone_sim_bringup nav2.launch.py > /tmp/nav2.log 2>&1 &
+    NAV2_PID=$!
+    echo "$NAV2_PID" > /tmp/drone_sim_nav2.pid
+    sleep 5
+
+    if kill -0 "$NAV2_PID" 2>/dev/null; then
+        ok "Nav2 Planner çalışıyor (PID: $NAV2_PID)"
+    else
+        warn "Nav2 Planner başlatılamadı — direkt navigasyon kullanılacak"
+    fi
+else
+    info "5/7 Nav2 Planner atlandı (mod: $MODE)"
+fi
+
+###############################################################################
+# 6) RViz2 Görselleştirme
 ###############################################################################
 if [ "$VIS" = "true" ]; then
-    info "5/6 RViz2 başlatılıyor..."
+    info "6/7 RViz2 başlatılıyor..."
     ros2 launch drone_sim_bringup view_slam.launch.py > /tmp/rviz.log 2>&1 &
     RVIZ_PID=$!
     echo "$RVIZ_PID" > /tmp/drone_sim_rviz.pid
@@ -168,29 +188,39 @@ if [ "$VIS" = "true" ]; then
         warn "RViz2 başlatılamadı (GUI mevcut olmayabilir)"
     fi
 else
-    info "5/6 RViz2 atlandı (novis)"
+    info "6/7 RViz2 atlandı (novis)"
 fi
 
 ###############################################################################
-# 6) Offboard / Teleop
+# 7) Uçuş Kontrolü (foreground)
 ###############################################################################
 echo ""
-echo -e "${GREEN}════════════════════════════════════════════════${NC}"
-if [ "$MODE" = "teleop" ]; then
-    info "6/6 Drone Teleop başlatılıyor (CTRL+C ile çıkış)..."
-    echo -e "${GREEN}════════════════════════════════════════════════${NC}"
+echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
+
+if [ "$MODE" = "nav" ]; then
+    info "7/7 Drone Navigator başlatılıyor (Nav2 otonom navigasyon)..."
+    echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${YELLOW}  Drone otomatik kalkış yapacak, sonra HOVER'da bekleyecek.${NC}"
+    echo -e "${YELLOW}  RViz2'de '2D Nav Goal' ile harita üzerinde hedef belirleyin.${NC}"
+    echo -e "${YELLOW}  Ctrl+C ile iniş yapılır.${NC}"
+    echo ""
+    ros2 run px4_offboard drone_navigator
+
+elif [ "$MODE" = "teleop" ]; then
+    info "7/7 Drone Teleop başlatılıyor (klavye kontrolü)..."
+    echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "${YELLOW}  Teleop başlamadan önce 't' ile arm+takeoff yapın!${NC}"
     echo ""
-    # Teleop interaktif — foreground
     ros2 run px4_offboard drone_teleop
+
 else
-    info "6/6 Offboard Control başlatılıyor (otomatik kalkış)..."
-    echo -e "${GREEN}════════════════════════════════════════════════${NC}"
+    info "7/7 Offboard Control başlatılıyor (otomatik hover)..."
+    echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
     echo ""
     echo -e "${YELLOW}  Drone otomatik olarak 1.5m'ye yükselecek ve hover yapacak.${NC}"
-    echo -e "${YELLOW}  CTRL+C ile iniş yapılır.${NC}"
+    echo -e "${YELLOW}  Ctrl+C ile iniş yapılır.${NC}"
     echo ""
-    # Offboard interaktif — foreground, Ctrl+C ile land
     ros2 run px4_offboard offboard_control
 fi

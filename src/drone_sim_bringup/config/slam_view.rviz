@@ -141,6 +141,43 @@ Visualization Manager:
       Normalize Range: true
       Queue Size: 2
 
+    # ── Nav2 Planlanan Yol ──
+    - Class: rviz_default_plugins/Path
+      Name: Planned Path
+      Value: true
+      Topic:
+        Value: /drone/planned_path
+        Depth: 1
+        Durability Policy: Volatile
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Color: 255; 0; 255
+      Alpha: 1.0
+      Buffer Length: 1
+      Line Style:
+        Value: Billboards
+        Width: 0.05
+      Offset:
+        X: 0
+        Y: 0
+        Z: 0.05
+      Pose Style: None
+
+    # ── Nav2 Global Costmap ──
+    - Class: rviz_default_plugins/Map
+      Name: Global Costmap
+      Value: true
+      Alpha: 0.4
+      Color Scheme: costmap
+      Topic:
+        Value: /global_costmap/costmap
+        Depth: 1
+        Durability Policy: Transient Local
+        History Policy: Keep Last
+        Reliability Policy: Reliable
+      Draw Behind: true
+      Use Timestamp: false
+
     # ── Drone pozisyon marker (base_link eksen) ──
     - Class: rviz_default_plugins/Axes
       Name: Drone Axes

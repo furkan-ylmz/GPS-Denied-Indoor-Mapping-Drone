@@ -20,6 +20,10 @@
   <exec_depend>slam_toolbox</exec_depend>
   <exec_depend>tf2_ros</exec_depend>
   <exec_depend>rtabmap_ros</exec_depend>
+  <exec_depend>nav2_planner</exec_depend>
+  <exec_depend>nav2_lifecycle_manager</exec_depend>
+  <exec_depend>nav2_costmap_2d</exec_depend>
+  <exec_depend>nav2_navfn_planner</exec_depend>
   <exec_depend>px4_offboard</exec_depend>
 
   <export>
