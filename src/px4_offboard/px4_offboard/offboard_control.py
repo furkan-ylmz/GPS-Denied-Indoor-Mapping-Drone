@@ -56,7 +56,7 @@ class OffboardControl(Node):
         super().__init__("offboard_control")
 
         # ── Parametreler ──
-        self.declare_parameter("takeoff_height", 1.5)
+        self.declare_parameter("takeoff_height", 1.0)
         self.declare_parameter("position_threshold", 0.3)
         self.declare_parameter("setpoint_count_before_offboard", 20)
 

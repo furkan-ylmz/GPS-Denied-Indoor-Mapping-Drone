@@ -3,40 +3,29 @@
   <model name="test_building">
     <static>true</static>
     <link name="building_link">
+      <!--
+        Blender Y-up → Gazebo Z-up: roll = +π/2
+        Z offset = -2.09 (0.01 pay ile ground_plane Z=0 ile çakışma önlenir)
+        Sonuç: zemin slabı Z≈0.01, tavan Z≈5.99
+        Kat 1 iç yükseklik: ~2.4m (Z=0.6 → Z=3.0)
+        Kat 2 iç yükseklik: ~2.3m (Z=3.1 → Z=5.4)
+      -->
+      <pose>0 0 -2.09 1.5708 0 0</pose>
       <collision name="building_collision">
         <geometry>
           <mesh>
-            <uri>meshes/test.obj</uri>
+            <uri>meshes/eg1.obj</uri>
             <scale>1 1 1</scale>
           </mesh>
         </geometry>
-        <surface>
-          <friction>
-            <ode>
-              <mu>1.0</mu>
-              <mu2>1.0</mu2>
-            </ode>
-          </friction>
-          <contact>
-            <ode>
-              <kp>1e6</kp>
-              <kd>100</kd>
-            </ode>
-          </contact>
-        </surface>
       </collision>
       <visual name="building_visual">
         <geometry>
           <mesh>
-            <uri>meshes/test.obj</uri>
+            <uri>meshes/eg1.obj</uri>
             <scale>1 1 1</scale>
           </mesh>
         </geometry>
-        <material>
-          <ambient>0.7 0.7 0.7 1</ambient>
-          <diffuse>0.8 0.8 0.8 1</diffuse>
-          <specular>0.2 0.2 0.2 1</specular>
-        </material>
       </visual>
     </link>
   </model>

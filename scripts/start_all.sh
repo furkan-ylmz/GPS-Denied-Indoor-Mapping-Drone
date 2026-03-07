@@ -75,7 +75,15 @@ echo ""
 ###############################################################################
 info "1/7 PX4 SITL + Gazebo başlatılıyor..."
 cd "$PX4_DIR"
-HEADLESS=1 make px4_sitl gz_x500_lidar > /tmp/px4_sitl.log 2>&1 &
+
+# World symlink'i güncelle
+ln -sf "$PROJECT_DIR/worlds/test_building.sdf" \
+       "$PX4_DIR/Tools/simulation/gz/worlds/test_building_world.sdf" 2>/dev/null || true
+
+# PX4 her zaman sunucu modunda başlar (HEADLESS=1)
+# Gazebo GUI client ayrıca başlatılacak
+HEADLESS=1 PX4_GZ_WORLD=test_building_world PX4_GZ_MODEL_POSE="0,0,0.8,0,0,0" \
+  make px4_sitl gz_x500_lidar > /tmp/px4_sitl.log 2>&1 &
 PX4_PID=$!
 echo "$PX4_PID" > /tmp/drone_sim_px4.pid
 
@@ -101,6 +109,22 @@ else
     else
         err "Gazebo başlatılamadı! Log: /tmp/px4_sitl.log"
         exit 1
+    fi
+fi
+
+# Gazebo GUI client — novis değilse ayrıca başlat
+if [ "$VIS" != "false" ]; then
+    info "     Gazebo GUI client başlatılıyor..."
+    sleep 2
+    # -g: sadece GUI client, mevcut sunucuya bağlanır
+    gz sim -g > /tmp/gz_gui.log 2>&1 &
+    GZ_GUI_PID=$!
+    echo "$GZ_GUI_PID" > /tmp/drone_sim_gz_gui.pid
+    sleep 2
+    if kill -0 "$GZ_GUI_PID" 2>/dev/null; then
+        ok "Gazebo GUI çalışıyor (PID: $GZ_GUI_PID)"
+    else
+        warn "Gazebo GUI başlatılamadı (WSL2 display sorunu olabilir)"
     fi
 fi
 
@@ -219,7 +243,7 @@ else
     info "7/7 Offboard Control başlatılıyor (otomatik hover)..."
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo -e "${YELLOW}  Drone otomatik olarak 1.5m'ye yükselecek ve hover yapacak.${NC}"
+    echo -e "${YELLOW}  Drone otomatik olarak 1.0m'ye yükselecek ve hover yapacak.${NC}"
     echo -e "${YELLOW}  Ctrl+C ile iniş yapılır.${NC}"
     echo ""
     ros2 run px4_offboard offboard_control

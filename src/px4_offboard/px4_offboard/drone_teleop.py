@@ -54,7 +54,7 @@ class DroneTeleop(Node):
 
         self.step_xy = 0.5
         self.step_z = 0.3
-        self.takeoff_alt = 1.5
+        self.takeoff_alt = 1.0
 
         # ── Publishers ──
         self.offboard_mode_pub = self.create_publisher(

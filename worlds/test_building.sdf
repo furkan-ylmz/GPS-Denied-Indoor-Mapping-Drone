@@ -39,42 +39,114 @@
       <direction>-0.5 0.1 -0.9</direction>
     </light>
 
-    <!-- İç mekan aydınlatması (kapalı alan için ek ışık) -->
-    <light type="point" name="indoor_light_1">
-      <pose>0 0 4 0 0 0</pose>
+    <!--
+      İç mekan aydınlatması — eg1 binası (~37m x 36m, 2 kat, ~6m yükseklik)
+      Bina merkezi yaklaşık (-3, -2.5). Kat 1: Z~0-3, Kat 2: Z~3-6
+      Işıklar her iki kata yayılmış, geniş attenuation range
+    -->
+
+    <!-- Kat 1 ışıkları (Z=2.5) -->
+    <light type="point" name="indoor_1f_center">
+      <pose>-3 -2 2.5 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <attenuation>
+        <range>30</range>
+        <constant>0.3</constant>
+        <linear>0.005</linear>
+        <quadratic>0.0005</quadratic>
+      </attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+
+    <light type="point" name="indoor_1f_ne">
+      <pose>8 8 2.5 0 0 0</pose>
       <diffuse>0.8 0.8 0.8 1</diffuse>
       <specular>0.1 0.1 0.1 1</specular>
       <attenuation>
-        <range>20</range>
-        <constant>0.5</constant>
-        <linear>0.01</linear>
-        <quadratic>0.001</quadratic>
+        <range>30</range>
+        <constant>0.3</constant>
+        <linear>0.005</linear>
+        <quadratic>0.0005</quadratic>
       </attenuation>
       <cast_shadows>false</cast_shadows>
     </light>
 
-    <light type="point" name="indoor_light_2">
-      <pose>3 3 4 0 0 0</pose>
-      <diffuse>0.7 0.7 0.7 1</diffuse>
+    <light type="point" name="indoor_1f_sw">
+      <pose>-14 -12 2.5 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
       <specular>0.1 0.1 0.1 1</specular>
       <attenuation>
-        <range>20</range>
-        <constant>0.5</constant>
-        <linear>0.01</linear>
-        <quadratic>0.001</quadratic>
+        <range>30</range>
+        <constant>0.3</constant>
+        <linear>0.005</linear>
+        <quadratic>0.0005</quadratic>
       </attenuation>
       <cast_shadows>false</cast_shadows>
     </light>
 
-    <light type="point" name="indoor_light_3">
-      <pose>-3 -3 4 0 0 0</pose>
+    <light type="point" name="indoor_1f_nw">
+      <pose>-14 8 2.5 0 0 0</pose>
       <diffuse>0.7 0.7 0.7 1</diffuse>
       <specular>0.1 0.1 0.1 1</specular>
       <attenuation>
-        <range>20</range>
-        <constant>0.5</constant>
-        <linear>0.01</linear>
-        <quadratic>0.001</quadratic>
+        <range>30</range>
+        <constant>0.3</constant>
+        <linear>0.005</linear>
+        <quadratic>0.0005</quadratic>
+      </attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+
+    <light type="point" name="indoor_1f_se">
+      <pose>8 -12 2.5 0 0 0</pose>
+      <diffuse>0.7 0.7 0.7 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <attenuation>
+        <range>30</range>
+        <constant>0.3</constant>
+        <linear>0.005</linear>
+        <quadratic>0.0005</quadratic>
+      </attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+
+    <!-- Kat 2 ışıkları (Z=5.5) -->
+    <light type="point" name="indoor_2f_center">
+      <pose>-3 -2 5.5 0 0 0</pose>
+      <diffuse>0.9 0.9 0.9 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <attenuation>
+        <range>30</range>
+        <constant>0.3</constant>
+        <linear>0.005</linear>
+        <quadratic>0.0005</quadratic>
+      </attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+
+    <light type="point" name="indoor_2f_ne">
+      <pose>8 8 5.5 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <attenuation>
+        <range>30</range>
+        <constant>0.3</constant>
+        <linear>0.005</linear>
+        <quadratic>0.0005</quadratic>
+      </attenuation>
+      <cast_shadows>false</cast_shadows>
+    </light>
+
+    <light type="point" name="indoor_2f_sw">
+      <pose>-14 -12 5.5 0 0 0</pose>
+      <diffuse>0.8 0.8 0.8 1</diffuse>
+      <specular>0.1 0.1 0.1 1</specular>
+      <attenuation>
+        <range>30</range>
+        <constant>0.3</constant>
+        <linear>0.005</linear>
+        <quadratic>0.0005</quadratic>
       </attenuation>
       <cast_shadows>false</cast_shadows>
     </light>

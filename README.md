@@ -69,7 +69,7 @@ drone_project/
 │   │   └── model.sdf               # 16-ch LiDAR (25m, 10Hz) + RGB cam
 │   └── test/                        # Bina modeli
 │       ├── model.config / model.sdf
-│       └── meshes/test.obj
+│       └── meshes/eg1.obj + eg1.mtl
 │
 ├── src/
 │   ├── px4_offboard/                # Uçuş kontrol paketi (ament_python)

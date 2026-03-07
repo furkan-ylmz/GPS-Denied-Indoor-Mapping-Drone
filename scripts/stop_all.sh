@@ -23,7 +23,7 @@ echo -e "${RED}╚════════════════════�
 echo ""
 
 # ── PID dosyalarından oku ve kapat ──
-for name in rviz slam bridge dds px4; do
+for name in rviz gz_gui slam bridge dds px4; do
     pidfile="/tmp/drone_sim_${name}.pid"
     if [ -f "$pidfile" ]; then
         pid=$(cat "$pidfile")
