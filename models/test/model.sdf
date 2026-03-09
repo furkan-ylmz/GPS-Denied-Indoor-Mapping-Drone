@@ -2,23 +2,48 @@
 <sdf version="1.9">
   <model name="test_building">
     <static>true</static>
-    <link name="building_link">
-      <!--
-        Blender Y-up → Gazebo Z-up: roll = +π/2
-        Z offset = -2.09 (0.01 pay ile ground_plane Z=0 ile çakışma önlenir)
-        Sonuç: zemin slabı Z≈0.01, tavan Z≈5.99
-        Kat 1 iç yükseklik: ~2.4m (Z=0.6 → Z=3.0)
-        Kat 2 iç yükseklik: ~2.3m (Z=3.1 → Z=5.4)
-      -->
-      <pose>0 0 -2.09 1.5708 0 0</pose>
-      <collision name="building_collision">
+
+    <!--
+      Blender Y-up → Gazebo Z-up: roll = +π/2, Z offset = -2.09
+      Kat 1 iç yükseklik: ~2.32m (zemin Z≈0.63, tavan Z≈2.95)
+
+      COLLISION STRATEJİSİ:
+      Karmaşık OBJ mesh collision kullanılamaz — ODE fizik motoru ince
+      üçgen yüzeylerle (duvarlar, döşemeler) kararsız temas noktaları
+      üretir ve dronu fırlatır. Çözüm: basit kutu collision.
+      - s1 (zemin döşeme): drone iniş/kalkış yüzeyi
+      - s2 (tavan döşeme): dronu 1. katta tutar
+      - Duvarlar: collision yok, LiDAR GPU raycasting visual mesh
+        üzerinde çalışır → Nav2 costmap engelden kaçınır
+    -->
+
+    <!-- ── Zemin döşeme (s1) — collision box ── -->
+    <link name="floor_slab">
+      <pose>-3.13 -2.44 0.32 0 0 0</pose>
+      <collision name="floor_collision">
         <geometry>
-          <mesh>
-            <uri>meshes/eg1.obj</uri>
-            <scale>1 1 1</scale>
-          </mesh>
+          <box>
+            <size>37.4 35.6 0.62</size>
+          </box>
         </geometry>
       </collision>
+    </link>
+
+    <!-- ── Tavan döşeme (s2) — collision box ── -->
+    <link name="ceiling_slab">
+      <pose>-3.13 -2.44 3.03 0 0 0</pose>
+      <collision name="ceiling_collision">
+        <geometry>
+          <box>
+            <size>37.4 35.6 0.18</size>
+          </box>
+        </geometry>
+      </collision>
+    </link>
+
+    <!-- ── Bina görsel mesh (LiDAR + kamera için) ── -->
+    <link name="building_visual_link">
+      <pose>0 0 -2.09 1.5708 0 0</pose>
       <visual name="building_visual">
         <geometry>
           <mesh>
@@ -28,5 +53,6 @@
         </geometry>
       </visual>
     </link>
+
   </model>
 </sdf>

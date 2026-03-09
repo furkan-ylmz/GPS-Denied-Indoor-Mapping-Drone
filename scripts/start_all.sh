@@ -82,7 +82,7 @@ ln -sf "$PROJECT_DIR/worlds/test_building.sdf" \
 
 # PX4 her zaman sunucu modunda başlar (HEADLESS=1)
 # Gazebo GUI client ayrıca başlatılacak
-HEADLESS=1 PX4_GZ_WORLD=test_building_world PX4_GZ_MODEL_POSE="0,0,0.8,0,0,0" \
+HEADLESS=1 PX4_GZ_WORLD=test_building_world PX4_GZ_MODEL_POSE="0,0,0.65,0,0,0" \
   make px4_sitl gz_x500_lidar > /tmp/px4_sitl.log 2>&1 &
 PX4_PID=$!
 echo "$PX4_PID" > /tmp/drone_sim_px4.pid
@@ -243,7 +243,7 @@ else
     info "7/7 Offboard Control başlatılıyor (otomatik hover)..."
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo -e "${YELLOW}  Drone otomatik olarak 1.0m'ye yükselecek ve hover yapacak.${NC}"
+    echo -e "${YELLOW}  Drone otomatik olarak 0.5m'ye yükselecek ve hover yapacak.${NC}"
     echo -e "${YELLOW}  Ctrl+C ile iniş yapılır.${NC}"
     echo ""
     ros2 run px4_offboard offboard_control
