@@ -102,18 +102,18 @@ def generate_launch_description():
             "Mem/NotLinkedNodesKept": "false",
             "Mem/STMSize": "30",
 
-            # 3D Grid / OccupancyGrid
+            # 3D Grid / OccupancyGrid (iç mekan optimizasyonu)
             "Grid/FromDepth": "false",
-            "Grid/RangeMax": "20.0",
-            "Grid/RangeMin": "0.3",
+            "Grid/RangeMax": "12.0",
+            "Grid/RangeMin": "0.5",
             "Grid/CellSize": "0.1",
             "Grid/ClusterRadius": "0.5",
             "Grid/3D": "true",
-            "Grid/MaxGroundHeight": "0.1",
-            "Grid/MaxObstacleHeight": "3.0",
+            "Grid/MaxGroundHeight": "0.3",
+            "Grid/MaxObstacleHeight": "2.0",
             "Grid/NormalsSegmentation": "true",
-            "Grid/NoiseFilteringRadius": "0.3",
-            "Grid/NoiseFilteringMinNeighbors": "3",
+            "Grid/NoiseFilteringRadius": "0.5",
+            "Grid/NoiseFilteringMinNeighbors": "5",
 
             # Optimizer
             "Optimizer/Strategy": "1",  # g2o

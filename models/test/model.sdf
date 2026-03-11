@@ -42,6 +42,10 @@
     </link>
 
     <!-- ── Bina görsel mesh (LiDAR + kamera için) ── -->
+    <!--
+      transparency=0.4 → Gazebo'da bina yarı-saydam, drone görünür
+      LiDAR GPU raycasting transparency'den etkilenmez, normal çalışır
+    -->
     <link name="building_visual_link">
       <pose>0 0 -2.09 1.5708 0 0</pose>
       <visual name="building_visual">
@@ -51,6 +55,7 @@
             <scale>1 1 1</scale>
           </mesh>
         </geometry>
+        <transparency>0.4</transparency>
       </visual>
     </link>
 

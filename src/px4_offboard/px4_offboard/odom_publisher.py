@@ -70,16 +70,18 @@ class OdomPublisher(Node):
         y_enu = pos[0]       # North
         z_enu = -pos[2]      # Up
 
-        # ── FRD → FLU quaternion dönüşümü ──
+        # ── NED/FRD → ENU/FLU quaternion dönüşümü ──
         # PX4 quaternion: body FRD → world NED  (w, x, y, z Hamilton)
         # ROS quaternion: body FLU → world ENU
-        # Dönüşüm: q_enu = R_ned2enu * q_ned * R_frd2flu
-        # Basitleştirilmiş: swap x↔y, negate z
+        # Tam dönüşüm: q_enu_flu = q_ned2enu ⊗ q_ned_frd ⊗ q_frd2flu
+        #   q_ned2enu = (0, 1/√2, 1/√2, 0)   [NED→ENU referans çerçeve rotasyonu]
+        #   q_frd2flu = (0, 1, 0, 0)           [π rad x-ekseni etrafında rotasyon]
         q = msg.q  # [w, x, y, z]
-        qw = q[0]
-        qx = q[2]   # swap: FRD.y → FLU.x (sağ→sol mapping)
-        qy = q[1]   # swap: FRD.x → FLU.y
-        qz = -q[3]  # negate z
+        _s = 0.7071067811865476  # 1/√2
+        qw = (q[0] + q[3]) * _s
+        qx = (q[1] + q[2]) * _s
+        qy = (q[1] - q[2]) * _s
+        qz = (q[0] - q[3]) * _s
 
         # ── NED → ENU hız dönüşümü ──
         vel = msg.velocity  # [vx_ned, vy_ned, vz_ned]
@@ -87,11 +89,11 @@ class OdomPublisher(Node):
         vy_enu = vel[0]
         vz_enu = -vel[2]
 
-        # Angular velocity: FRD → FLU
+        # Angular velocity: FRD → FLU (body frame dönüşüm, swap değil)
         ang = msg.angular_velocity  # [wx, wy, wz] body FRD
-        wx_flu = ang[1]
-        wy_flu = ang[0]
-        wz_flu = -ang[2]
+        wx_flu = ang[0]       # forward ekseni (aynı)
+        wy_flu = -ang[1]      # right → left (negate)
+        wz_flu = -ang[2]      # down → up (negate)
 
         # ── nav_msgs/Odometry mesajı ──
         odom = Odometry()

@@ -47,7 +47,7 @@
         </material>
       </visual>
 
-      <!-- 3D LiDAR: 16 kanal, 360°, 25m menzil -->
+      <!-- 3D LiDAR: 16 kanal, 360°, iç mekan optimizasyonu -->
       <sensor name="lidar_3d" type="gpu_lidar">
         <gz_frame_id>lidar_link</gz_frame_id>
         <pose>0 0 0.03 0 0 0</pose>
@@ -62,13 +62,13 @@
             <vertical>
               <samples>16</samples>
               <resolution>1</resolution>
-              <min_angle>-0.261799</min_angle>   <!-- -15° -->
-              <max_angle>0.261799</max_angle>    <!-- +15° -->
+              <min_angle>-0.1745</min_angle>     <!-- -10° (zemin gürültüsü azalır) -->
+              <max_angle>0.1745</max_angle>      <!-- +10° (tavan gürültüsü azalır) -->
             </vertical>
           </scan>
           <range>
-            <min>0.2</min>
-            <max>25.0</max>
+            <min>0.3</min>
+            <max>15.0</max>
             <resolution>0.01</resolution>
           </range>
           <noise>
