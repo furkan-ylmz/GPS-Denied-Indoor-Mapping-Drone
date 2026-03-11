@@ -81,9 +81,9 @@ class DroneNavigator(Node):
         super().__init__("drone_navigator")
 
         # ── Parametreler ──
-        self.declare_parameter("takeoff_height", 1.5)
+        self.declare_parameter("takeoff_height", 1.0)
         self.declare_parameter("position_threshold", 0.3)
-        self.declare_parameter("waypoint_spacing", 0.5)
+        self.declare_parameter("waypoint_spacing", 0.3)
         self.declare_parameter("setpoint_count_before_offboard", 20)
 
         self.takeoff_height = self.get_parameter("takeoff_height").value
@@ -210,9 +210,10 @@ class DroneNavigator(Node):
         """Planner goal kabul/red cevabı."""
         goal_handle = future.result()
         if not goal_handle.accepted:
-            self.get_logger().warn("Path istegi reddedildi -> direkt hedef")
+            self.get_logger().warn(
+                "Path istegi reddedildi — HOVER'da bekleniyor "
+                "(costmap henuz hazir olmayabilir)")
             self.planning_in_progress = False
-            self._set_direct_goal(self.goal_pose_map)
             return
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self._on_plan_result)
@@ -224,8 +225,8 @@ class DroneNavigator(Node):
         path = result.path
 
         if len(path.poses) < 2:
-            self.get_logger().warn("Path cok kisa -> direkt hedef")
-            self._set_direct_goal(self.goal_pose_map)
+            self.get_logger().warn(
+                "Path cok kisa veya bulunamadi — HOVER'da bekleniyor")
             return
 
         self.get_logger().info(
@@ -239,8 +240,7 @@ class DroneNavigator(Node):
         ned_wps = self._convert_path_to_ned(path)
 
         if not ned_wps:
-            self.get_logger().warn("Path donusumu bos -> direkt hedef")
-            self._set_direct_goal(self.goal_pose_map)
+            self.get_logger().warn("Path donusumu bos — HOVER'da bekleniyor")
             return
 
         self.waypoints_ned = ned_wps

@@ -23,7 +23,7 @@ echo -e "${RED}╚════════════════════�
 echo ""
 
 # ── PID dosyalarından oku ve kapat ──
-for name in rviz gz_gui slam bridge dds px4; do
+for name in rviz gz_gui nav2 navigator slam bridge dds px4; do
     pidfile="/tmp/drone_sim_${name}.pid"
     if [ -f "$pidfile" ]; then
         pid=$(cat "$pidfile")
@@ -46,6 +46,10 @@ pkill -f "parameter_bridge" 2>/dev/null || true
 pkill -f "odom_publisher" 2>/dev/null || true
 pkill -f "offboard_control" 2>/dev/null || true
 pkill -f "drone_teleop" 2>/dev/null || true
+pkill -f "drone_navigator" 2>/dev/null || true
+pkill -f "frontier_explorer" 2>/dev/null || true
+pkill -f "planner_server" 2>/dev/null || true
+pkill -f "lifecycle_manager" 2>/dev/null || true
 pkill -f "rtabmap" 2>/dev/null || true
 pkill -f "rviz2" 2>/dev/null || true
 pkill -f "MicroXRCEAgent" 2>/dev/null || true

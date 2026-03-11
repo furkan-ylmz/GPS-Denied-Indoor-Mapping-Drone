@@ -14,6 +14,7 @@
 # Kullanım:
 #   bash scripts/start_all.sh             # Otomatik hover (offboard_control)
 #   bash scripts/start_all.sh nav         # Nav2 otonom nav (RViz2'den hedef ver)
+#   bash scripts/start_all.sh explore     # Otonom keşif (frontier exploration)
 #   bash scripts/start_all.sh teleop      # Klavye ile kontrol
 #   bash scripts/start_all.sh novis       # RViz2 kapalı
 #   bash scripts/start_all.sh nav novis   # Nav2 + RViz yok
@@ -34,9 +35,10 @@ MODE="offboard"      # offboard | teleop | nav
 VIS="true"           # true | false
 for arg in "$@"; do
     case "$arg" in
-        teleop) MODE="teleop" ;;
-        nav)    MODE="nav" ;;
-        novis)  VIS="false" ;;
+        teleop)  MODE="teleop" ;;
+        nav)     MODE="nav" ;;
+        explore) MODE="explore" ;;
+        novis)   VIS="false" ;;
     esac
 done
 
@@ -181,7 +183,7 @@ fi
 ###############################################################################
 # 5) Nav2 Planner (sadece nav modunda)
 ###############################################################################
-if [ "$MODE" = "nav" ]; then
+if [ "$MODE" = "nav" ] || [ "$MODE" = "explore" ]; then
     info "5/7 Nav2 Planner başlatılıyor..."
     ros2 launch drone_sim_bringup nav2.launch.py > /tmp/nav2.log 2>&1 &
     NAV2_PID=$!
@@ -231,6 +233,23 @@ if [ "$MODE" = "nav" ]; then
     echo ""
     ros2 run px4_offboard drone_navigator
 
+elif [ "$MODE" = "explore" ]; then
+    info "7/7 Otonom Keşif başlatılıyor (Frontier Explorer + Navigator)..."
+    echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
+    echo ""
+    echo -e "${YELLOW}  Drone otomatik kalkış yapıp bina içini keşfedecek.${NC}"
+    echo -e "${YELLOW}  Frontier tabanlı otonom keşif aktif.${NC}"
+    echo -e "${YELLOW}  Ctrl+C ile iniş yapılır.${NC}"
+    echo ""
+    # Navigator arka planda çalışır
+    ros2 run px4_offboard drone_navigator &
+    NAV_PID=$!
+    echo "$NAV_PID" > /tmp/drone_sim_navigator.pid
+    sleep 2
+    ok "Navigator çalışıyor (PID: $NAV_PID)"
+    # Frontier Explorer foreground'da
+    ros2 run px4_offboard frontier_explorer
+
 elif [ "$MODE" = "teleop" ]; then
     info "7/7 Drone Teleop başlatılıyor (klavye kontrolü)..."
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
@@ -243,7 +262,7 @@ else
     info "7/7 Offboard Control başlatılıyor (otomatik hover)..."
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
     echo ""
-    echo -e "${YELLOW}  Drone otomatik olarak 0.5m'ye yükselecek ve hover yapacak.${NC}"
+    echo -e "${YELLOW}  Drone otomatik olarak 1.0m'ye yükselecek ve hover yapacak.${NC}"
     echo -e "${YELLOW}  Ctrl+C ile iniş yapılır.${NC}"
     echo ""
     ros2 run px4_offboard offboard_control
