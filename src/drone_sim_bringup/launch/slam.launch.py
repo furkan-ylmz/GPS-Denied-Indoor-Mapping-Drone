@@ -104,7 +104,7 @@ def generate_launch_description():
 
             # 3D Grid / OccupancyGrid (iç mekan optimizasyonu)
             "Grid/FromDepth": "false",
-            "Grid/RangeMax": "12.0",
+            "Grid/RangeMax": "20.0",
             "Grid/RangeMin": "0.5",
             "Grid/CellSize": "0.1",
             "Grid/ClusterRadius": "0.5",

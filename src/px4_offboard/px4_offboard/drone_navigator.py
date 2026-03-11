@@ -37,6 +37,7 @@ from rclpy.duration import Duration
 
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
+from std_msgs.msg import String
 
 from px4_msgs.msg import (
     OffboardControlMode,
@@ -102,6 +103,10 @@ class DroneNavigator(Node):
 
         # ── Görselleştirme Publisher ──
         self.path_pub = self.create_publisher(Path, "/drone/planned_path", 10)
+
+        # ── Navigator durum publisher (explorer için) ──
+        self.nav_status_pub = self.create_publisher(
+            String, "/navigator/status", 10)
 
         # ── PX4 Subscribers ──
         self.create_subscription(
@@ -211,9 +216,9 @@ class DroneNavigator(Node):
         goal_handle = future.result()
         if not goal_handle.accepted:
             self.get_logger().warn(
-                "Path istegi reddedildi — HOVER'da bekleniyor "
-                "(costmap henuz hazir olmayabilir)")
+                "Path istegi reddedildi — HOVER'da bekleniyor")
             self.planning_in_progress = False
+            self._publish_nav_status("FAILED")
             return
         result_future = goal_handle.get_result_async()
         result_future.add_done_callback(self._on_plan_result)
@@ -225,8 +230,19 @@ class DroneNavigator(Node):
         path = result.path
 
         if len(path.poses) < 2:
+            # Tanılama: neden path bulunamadı?
+            gp = self.goal_pose_map
+            goal_str = ""
+            if gp is not None:
+                goal_str = (f" | hedef: ({gp.pose.position.x:.1f}, "
+                            f"{gp.pose.position.y:.1f})")
+            robot_enu_x = self.pos_ned[1]  # NED→ENU
+            robot_enu_y = self.pos_ned[0]
             self.get_logger().warn(
-                "Path cok kisa veya bulunamadi — HOVER'da bekleniyor")
+                f"Path bulunamadi! robot: ({robot_enu_x:.1f}, "
+                f"{robot_enu_y:.1f}){goal_str} | "
+                f"poses: {len(path.poses)}")
+            self._publish_nav_status("FAILED")
             return
 
         self.get_logger().info(
@@ -247,6 +263,7 @@ class DroneNavigator(Node):
         self.wp_index = 0
         self.target_ned = self.waypoints_ned[0]
         self.state = State.NAVIGATING
+        self._publish_nav_status("NAVIGATING")
         self.get_logger().info(
             f"Navigasyon basladi: {len(self.waypoints_ned)} waypoint")
 
@@ -396,6 +413,12 @@ class DroneNavigator(Node):
     def _at_target(self):
         return self._dist_to_target() < self.pos_threshold
 
+    def _publish_nav_status(self, status):
+        """Navigator durumunu yayınla (NAVIGATING/REACHED/FAILED)."""
+        msg = String()
+        msg.data = status
+        self.nav_status_pub.publish(msg)
+
     # ════════════════════════════════════════════
     #  Ana Kontrol Döngüsü (20Hz)
     # ════════════════════════════════════════════
@@ -481,6 +504,7 @@ class DroneNavigator(Node):
                     self.get_logger().info("Hedefe ulasildi! -> HOVER")
                     self.goal_pose_map = None
                     self.state = State.HOVER
+                    self._publish_nav_status("REACHED")
 
     def do_land(self):
         """İniş komutu gönder."""
