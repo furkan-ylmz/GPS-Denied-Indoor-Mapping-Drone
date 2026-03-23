@@ -103,16 +103,20 @@ def generate_launch_description():
             "Mem/STMSize": "30",
 
             # 3D Grid / OccupancyGrid (iç mekan optimizasyonu)
+            # Yükseklik değerleri base_link'e göre (drone merkezi)
+            # Drone 1.0m'de uçar. Tavan ~1.3m yukarıda.
+            # MaxObstacleHeight=1.0 → tavan hariç, duvarlar dahil
+            # MaxGroundHeight=-0.2 → drone seviyesindeki duvarlar da engel
             "Grid/FromDepth": "false",
             "Grid/RangeMax": "20.0",
-            "Grid/RangeMin": "0.5",
+            "Grid/RangeMin": "0.3",
             "Grid/CellSize": "0.1",
-            "Grid/ClusterRadius": "0.5",
+            "Grid/ClusterRadius": "0.3",
             "Grid/3D": "true",
-            "Grid/MaxGroundHeight": "0.3",
-            "Grid/MaxObstacleHeight": "2.0",
+            "Grid/MaxGroundHeight": "-0.2",
+            "Grid/MaxObstacleHeight": "1.0",
             "Grid/NormalsSegmentation": "true",
-            "Grid/NoiseFilteringRadius": "0.5",
+            "Grid/NoiseFilteringRadius": "0.3",
             "Grid/NoiseFilteringMinNeighbors": "5",
 
             # Optimizer

@@ -249,6 +249,13 @@ class DroneNavigator(Node):
             f"Path alindi: {len(path.poses)} nokta | "
             f"sure: {result.planning_time.sec}.{result.planning_time.nanosec//1000000:03d}s")
 
+        # İlk ve son noktayı logla (tanılama)
+        p0 = path.poses[0].pose.position
+        pN = path.poses[-1].pose.position
+        self.get_logger().info(
+            f"  start: ({p0.x:.1f}, {p0.y:.1f}) | "
+            f"end: ({pN.x:.1f}, {pN.y:.1f})")
+
         # RViz2'de path'i göster
         self.path_pub.publish(path)
 
