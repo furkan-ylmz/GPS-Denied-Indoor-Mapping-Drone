@@ -34,6 +34,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 from rclpy.action import ActionClient
 from rclpy.duration import Duration
+from rclpy.executors import ExternalShutdownException
 
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
@@ -524,14 +525,21 @@ def main(args=None):
     node = DroneNavigator()
     try:
         rclpy.spin(node)
+    except ExternalShutdownException:
+        pass
     except KeyboardInterrupt:
-        node.get_logger().info("Ctrl+C -> inis yapiliyor...")
-        node.do_land()
-        import time
-        time.sleep(2.0)
+        try:
+            if rclpy.ok():
+                node.get_logger().info("Ctrl+C -> inis yapiliyor...")
+                node.do_land()
+                import time
+                time.sleep(2.0)
+        except Exception:
+            pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

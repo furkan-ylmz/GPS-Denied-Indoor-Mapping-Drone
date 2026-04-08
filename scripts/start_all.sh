@@ -42,6 +42,14 @@ for arg in "$@"; do
     esac
 done
 
+# ── Spawn pozisyonu (koridor) ──
+# Istenirse ortam degiskenleriyle override edilebilir:
+#   DRONE_SPAWN_X, DRONE_SPAWN_Y, DRONE_SPAWN_Z, DRONE_SPAWN_YAW
+SPAWN_X="${DRONE_SPAWN_X:-10.28}"
+SPAWN_Y="${DRONE_SPAWN_Y:--1.71}"
+SPAWN_Z="${DRONE_SPAWN_Z:-0.65}"
+SPAWN_YAW="${DRONE_SPAWN_YAW:-0}"
+
 # ── Renk kodları ──
 GREEN='\033[0;32m'
 CYAN='\033[0;36m'
@@ -70,6 +78,7 @@ echo -e "${GREEN}╔════════════════════
 echo -e "${GREEN}║        Drone SLAM Simülasyonu Başlatılıyor          ║${NC}"
 echo -e "${GREEN}║   Mod: ${YELLOW}${MODE}${GREEN}  |  RViz: ${YELLOW}${VIS}${GREEN}                            ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
+echo -e "${CYAN}[INFO]${NC}  Spawn pose: x=${SPAWN_X} y=${SPAWN_Y} z=${SPAWN_Z} yaw=${SPAWN_YAW}"
 echo ""
 
 ###############################################################################
@@ -84,7 +93,7 @@ ln -sf "$PROJECT_DIR/worlds/test_building.sdf" \
 
 # PX4 her zaman sunucu modunda başlar (HEADLESS=1)
 # Gazebo GUI client ayrıca başlatılacak
-HEADLESS=1 PX4_GZ_WORLD=test_building_world PX4_GZ_MODEL_POSE="0,0,0.65,0,0,0" \
+HEADLESS=1 PX4_GZ_WORLD=test_building_world PX4_GZ_MODEL_POSE="${SPAWN_X},${SPAWN_Y},${SPAWN_Z},0,0,${SPAWN_YAW}" \
   make px4_sitl gz_x500_lidar > /tmp/px4_sitl.log 2>&1 &
 PX4_PID=$!
 echo "$PX4_PID" > /tmp/drone_sim_px4.pid

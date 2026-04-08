@@ -14,6 +14,12 @@ source /opt/ros/jazzy/setup.bash
 
 export PX4_ROOT="$HOME/PX4-Autopilot"
 
+# Spawn pozisyonu (koridor) — opsiyonel override
+SPAWN_X="${DRONE_SPAWN_X:-10.28}"
+SPAWN_Y="${DRONE_SPAWN_Y:--1.71}"
+SPAWN_Z="${DRONE_SPAWN_Z:-0.65}"
+SPAWN_YAW="${DRONE_SPAWN_YAW:-0}"
+
 MODE="${1:-custom}"
 
 cd ${PX4_ROOT}
@@ -33,7 +39,7 @@ else
            "${PX4_ROOT}/Tools/simulation/gz/worlds/test_building_world.sdf" 2>/dev/null || true
 
     export PX4_GZ_WORLD=test_building_world
-    export PX4_GZ_MODEL_POSE="0,0,0.5,0,0,0"
+    export PX4_GZ_MODEL_POSE="${SPAWN_X},${SPAWN_Y},${SPAWN_Z},0,0,${SPAWN_YAW}"
 
     make px4_sitl gz_x500_lidar
 fi

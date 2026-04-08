@@ -51,7 +51,7 @@ Visualization Manager:
       Color Scheme: map
       Draw Behind: true
       Topic:
-        Value: /map
+        Value: /map_clean
         Depth: 1
         Durability Policy: Transient Local
         History Policy: Keep Last
@@ -63,7 +63,7 @@ Visualization Manager:
     # ── 3D Point Cloud Map (RTAB-Map tarafından üretilir) ──
     - Class: rviz_default_plugins/PointCloud2
       Name: 3D Cloud Map
-      Value: true
+      Value: false
       Topic:
         Value: /cloud_map
         Depth: 1
@@ -84,7 +84,7 @@ Visualization Manager:
     # ── Canlı LiDAR point cloud ──
     - Class: rviz_default_plugins/PointCloud2
       Name: LiDAR Points
-      Value: true
+      Value: false
       Topic:
         Value: /drone/lidar/points
         Depth: 5
@@ -111,7 +111,7 @@ Visualization Manager:
         Reliability Policy: Best Effort
       Position Tolerance: 0.1
       Angle Tolerance: 0.1
-      Keep: 500
+      Keep: 200
       Shape:
         Value: Arrow
         Alpha: 1.0
@@ -128,7 +128,7 @@ Visualization Manager:
     # ── Kamera görüntüsü ──
     - Class: rviz_default_plugins/Image
       Name: Camera
-      Value: true
+      Value: false
       Topic:
         Value: /drone/camera/image_raw
         Depth: 1
@@ -166,7 +166,7 @@ Visualization Manager:
     # ── Nav2 Global Costmap ──
     - Class: rviz_default_plugins/Map
       Name: Global Costmap
-      Value: true
+      Value: false
       Alpha: 0.4
       Color Scheme: costmap
       Topic:
@@ -189,7 +189,7 @@ Visualization Manager:
   Global Options:
     Background Color: 30; 30; 30
     Fixed Frame: map
-    Frame Rate: 30
+    Frame Rate: 20
   Name: root
   Tools:
     - Class: rviz_default_plugins/MoveCamera

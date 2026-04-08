@@ -1,28 +1,14 @@
 """
-Frontier Explorer — DFS Ağaç Tabanlı Otonom Bina İçi Keşif
-═══════════════════════════════════════════════════════════════
+Frontier Explorer - Utility-based WFD exploration
+=================================================
 
-Depth-First Search (DFS) backtracking algoritması ile bina içini
-sistematik olarak keşfeder.
+This node explores unknown areas by selecting frontiers from a cleaned map
+using a utility score.
 
-Algoritma (DFS Ağaç):
-  1. Başlangıç noktasında root node oluştur
-  2. Tüm frontier'ları bul, EN UZAĞA git (derinlik öncelikli)
-  3. Hedefe ulaşınca yeni node oluştur, oradan da en uzağa git
-  4. Dallanma devam eder (ağaç derinleşir)
-  5. Bir dalda frontier kalmazsa → bir önceki node'a geri dön (backtrack)
-  6. O node'daki kalan en uzak frontier'a git
-  7. Tüm node'lar tamamlanınca → keşif biter
-
-Örnek ağaç:
-     [Root] ─── en uzak ──→ [A] ─── en uzak ──→ [B] (dal bitti)
-        │                    │                         ↑ backtrack
-        │                    └── 2. uzak ──→ [C]      [B→A]
-        └── 2. uzak ──→ [D] ─── ...                   ↑ backtrack
-                                                       [A→Root]
-
-Kullanım:
-  ros2 run px4_offboard frontier_explorer
+Design goals:
+- Avoid repetitive DFS backtracking loops.
+- Prefer frontiers with higher information gain while keeping travel efficient.
+- Reduce re-targeting recently attempted or failed goals.
 """
 
 import math
@@ -31,70 +17,70 @@ from collections import deque
 import numpy as np
 
 import rclpy
+from rclpy.duration import Duration
 from rclpy.node import Node
-from rclpy.qos import QoSProfile, DurabilityPolicy, ReliabilityPolicy, HistoryPolicy
-
-from nav_msgs.msg import OccupancyGrid
-from geometry_msgs.msg import PoseStamped
-from std_msgs.msg import Bool, String
+from rclpy.qos import DurabilityPolicy, HistoryPolicy, QoSProfile, ReliabilityPolicy
 
 import tf2_ros
-from rclpy.duration import Duration
+from geometry_msgs.msg import PoseStamped
+from nav_msgs.msg import OccupancyGrid
+from std_msgs.msg import Bool, String
 
 
-# OccupancyGrid değerleri
 UNKNOWN = -1
 FREE = 0
-
-
-class ExploreNode:
-    """DFS ağacındaki bir keşif noktası."""
-    __slots__ = ("position", "targets", "target_idx")
-
-    def __init__(self, position, targets):
-        self.position = position         # (x, y) dünya koordinatları
-        self.targets = targets           # [(x, y, size), ...] uzaktan yakına sıralı
-        self.target_idx = 0              # sıradaki hedef indeksi
-
-    @property
-    def has_remaining(self):
-        return self.target_idx < len(self.targets)
-
-    @property
-    def current_target(self):
-        if self.has_remaining:
-            t = self.targets[self.target_idx]
-            return (t[0], t[1])
-        return None
-
-    def advance(self):
-        """Bir sonraki hedefe geç (mevcut dal tükendiğinde)."""
-        self.target_idx += 1
 
 
 class FrontierExplorer(Node):
     def __init__(self):
         super().__init__("frontier_explorer")
 
-        # ── Parametreler ──
-        self.declare_parameter("min_frontier_size", 5)
+        # Core behavior
+        self.declare_parameter("min_frontier_size", 8)
         self.declare_parameter("goal_tolerance", 0.8)
-        self.declare_parameter("blacklist_radius", 1.0)
-        self.declare_parameter("update_interval", 3.0)
+        self.declare_parameter("update_interval", 2.0)
         self.declare_parameter("robot_frame", "base_link")
-        self.declare_parameter("costmap_topic", "/map")
+        self.declare_parameter("costmap_topic", "/map_clean")
         self.declare_parameter("goal_timeout", 15.0)
-        self.declare_parameter("approach_offset", 2.0)
+        self.declare_parameter("approach_offset", 1.5)
+        self.declare_parameter("min_goal_distance", 0.8)
 
-        self.min_frontier_size = self.get_parameter("min_frontier_size").value
-        self.goal_tolerance = self.get_parameter("goal_tolerance").value
-        self.blacklist_radius = self.get_parameter("blacklist_radius").value
-        self.update_interval = self.get_parameter("update_interval").value
-        self.robot_frame = self.get_parameter("robot_frame").value
-        self.goal_timeout = self.get_parameter("goal_timeout").value
-        self.approach_offset = self.get_parameter("approach_offset").value
+        # Utility score tuning
+        self.declare_parameter("utility_size_weight", 1.0)
+        self.declare_parameter("utility_distance_weight", 1.2)
 
-        # ── Subscribers ──
+        # Anti-repeat / stuck handling
+        self.declare_parameter("blacklist_radius", 1.0)
+        self.declare_parameter("recent_goal_radius", 1.2)
+        self.declare_parameter("recent_goal_memory", 10)
+        self.declare_parameter("max_no_frontier_cycles", 8)
+
+        self.min_frontier_size = int(self.get_parameter("min_frontier_size").value)
+        self.goal_tolerance = float(self.get_parameter("goal_tolerance").value)
+        self.update_interval = float(self.get_parameter("update_interval").value)
+        self.robot_frame = str(self.get_parameter("robot_frame").value)
+        self.costmap_topic = str(self.get_parameter("costmap_topic").value)
+        self.goal_timeout = float(self.get_parameter("goal_timeout").value)
+        self.approach_offset = float(self.get_parameter("approach_offset").value)
+        self.min_goal_distance = float(self.get_parameter("min_goal_distance").value)
+
+        self.utility_size_weight = float(
+            self.get_parameter("utility_size_weight").value
+        )
+        self.utility_distance_weight = float(
+            self.get_parameter("utility_distance_weight").value
+        )
+
+        self.blacklist_radius = float(self.get_parameter("blacklist_radius").value)
+        self.recent_goal_radius = float(self.get_parameter("recent_goal_radius").value)
+        self.recent_goal_memory = max(
+            1, int(self.get_parameter("recent_goal_memory").value)
+        )
+        self.max_no_frontier_cycles = max(
+            1, int(self.get_parameter("max_no_frontier_cycles").value)
+        )
+
+        # Subscribers
         map_qos = QoSProfile(
             reliability=ReliabilityPolicy.RELIABLE,
             durability=DurabilityPolicy.TRANSIENT_LOCAL,
@@ -103,82 +89,78 @@ class FrontierExplorer(Node):
         )
         self.create_subscription(
             OccupancyGrid,
-            self.get_parameter("costmap_topic").value,
+            self.costmap_topic,
             self._map_cb,
             map_qos,
         )
+        self.create_subscription(String, "/navigator/status", self._nav_status_cb, 10)
 
-        # ── Publishers ──
+        # Publishers
         self.goal_pub = self.create_publisher(PoseStamped, "/goal_pose", 10)
         self.exploring_pub = self.create_publisher(Bool, "/explorer/active", 10)
 
-        # ── Navigator durum subscriber ──
-        self.create_subscription(
-            String, "/navigator/status", self._nav_status_cb, 10)
-
-        # ── TF ──
+        # TF
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
-        # ── DFS Ağaç Durumu ──
-        self.explore_stack = []          # [ExploreNode, ...] DFS stack
-        self.blacklisted = []            # [(x, y), ...] ulaşılamayan hedefler
-        self.current_goal = None         # (x, y) aktif hedef
-        self.goal_sent_time = None
-        self.exploring = False
-        self.nav_failed = False           # Navigator path bulamadı mı?
-        self.no_frontier_count = 0
-        self.max_no_frontier = 5
-        self.blacklist_reset_count = 0
-        self.max_blacklist_resets = 3
-
-        # ── Harita ──
+        # State
         self.map_data = None
         self.map_info = None
 
-        # ── Timer ──
+        self.current_goal = None
+        self.goal_sent_time = None
+
+        self.blacklisted = []
+        self.recent_goals = deque(maxlen=self.recent_goal_memory)
+
+        self.no_frontier_count = 0
+        self.exploring = False
+
+        # Timer
         self.timer = self.create_timer(self.update_interval, self._explore_tick)
 
         self.get_logger().info(
-            "DFS Frontier Explorer baslatildi | "
-            "Strateji: en uzak frontier oncelikli + backtracking")
-
-    # ════════════════════════════════════════════
-    #  Callbacks
-    # ════════════════════════════════════════════
+            "Utility WFD explorer started | "
+            f"map={self.costmap_topic} | "
+            f"weights(size/dist)=({self.utility_size_weight:.2f}/"
+            f"{self.utility_distance_weight:.2f})"
+        )
 
     def _map_cb(self, msg: OccupancyGrid):
-        self.map_data = np.array(msg.data, dtype=np.int8).reshape(
-            (msg.info.height, msg.info.width))
         self.map_info = msg.info
+        self.map_data = np.asarray(msg.data, dtype=np.int16).reshape(
+            (msg.info.height, msg.info.width)
+        )
 
     def _nav_status_cb(self, msg: String):
-        """Navigator'dan durum geldiğinde."""
-        if msg.data == "FAILED" and self.current_goal is not None:
-            gx, gy = self.current_goal
+        if self.current_goal is None:
+            return
+
+        gx, gy = self.current_goal
+        if msg.data == "FAILED":
             self.get_logger().warn(
-                f"Navigator path bulamadi! Blacklist: ({gx:.1f}, {gy:.1f})")
+                f"Navigator failed -> blacklist ({gx:.1f}, {gy:.1f})"
+            )
             self.blacklisted.append((gx, gy))
             self.current_goal = None
-            self.nav_failed = True
-            # Hemen sonraki hedefe geç (3 sn bekleme)
-            self._explore_tick()
-
-        elif msg.data == "REACHED" and self.current_goal is not None:
-            gx, gy = self.current_goal
+            self.goal_sent_time = None
+        elif msg.data == "REACHED":
             self.get_logger().info(
-                f"Navigator hedefe ulasti: ({gx:.1f}, {gy:.1f})")
+                f"Navigator reached goal ({gx:.1f}, {gy:.1f})"
+            )
+            self.recent_goals.append((gx, gy))
             self.current_goal = None
-
-    # ════════════════════════════════════════════
-    #  Koordinat Dönüşümleri
-    # ════════════════════════════════════════════
+            self.goal_sent_time = None
+            self.no_frontier_count = 0
 
     def _get_robot_position(self):
         try:
             tf = self.tf_buffer.lookup_transform(
-                "map", self.robot_frame, rclpy.time.Time(),
-                timeout=Duration(seconds=0.5))
+                "map",
+                self.robot_frame,
+                rclpy.time.Time(),
+                timeout=Duration(seconds=0.3),
+            )
             return (tf.transform.translation.x, tf.transform.translation.y)
         except Exception:
             return None
@@ -189,24 +171,27 @@ class FrontierExplorer(Node):
         res = self.map_info.resolution
         return (ox + (gx + 0.5) * res, oy + (gy + 0.5) * res)
 
-    # ════════════════════════════════════════════
-    #  Frontier Tespiti
-    # ════════════════════════════════════════════
+    def _is_blacklisted(self, wx, wy):
+        for bx, by in self.blacklisted:
+            if math.hypot(wx - bx, wy - by) < self.blacklist_radius:
+                return True
+        return False
+
+    def _is_recent_goal(self, wx, wy):
+        for rx, ry in self.recent_goals:
+            if math.hypot(wx - rx, wy - ry) < self.recent_goal_radius:
+                return True
+        return False
 
     def _find_frontiers(self):
-        """Haritadaki frontier kümelerini bul.
-
-        Returns: [(wx, wy, size), ...] dünya koordinatları ve küme boyutu.
-        """
         if self.map_data is None or self.map_info is None:
             return []
 
         h, w = self.map_data.shape
+        free_mask = self.map_data == FREE
+        unknown_mask = self.map_data == UNKNOWN
 
-        free_mask = (self.map_data == FREE)
-        unknown_mask = (self.map_data == UNKNOWN)
-
-        # 4-yönlü komşuluk ile frontier tespiti
+        # A frontier cell is free and has at least one unknown 4-neighbor.
         has_unknown_neighbor = np.zeros((h, w), dtype=bool)
         if h > 1:
             has_unknown_neighbor[1:, :] |= unknown_mask[:-1, :]
@@ -216,108 +201,95 @@ class FrontierExplorer(Node):
             has_unknown_neighbor[:, :-1] |= unknown_mask[:, 1:]
 
         frontier_mask = free_mask & has_unknown_neighbor
-
-        # BFS ile kümeleme
         frontier_coords = np.argwhere(frontier_mask)
         if len(frontier_coords) == 0:
             return []
 
         visited = set()
-        results = []
+        frontiers = []
 
         for row, col in frontier_coords:
+            row = int(row)
+            col = int(col)
             if (row, col) in visited:
                 continue
 
-            cluster_gx = []
-            cluster_gy = []
             queue = deque([(row, col)])
             visited.add((row, col))
+            cluster_cells = []
 
             while queue:
                 r, c = queue.popleft()
-                cluster_gx.append(c)
-                cluster_gy.append(r)
+                cluster_cells.append((r, c))
 
                 for dr, dc in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
-                    nr, nc = r + dr, c + dc
-                    if (0 <= nr < h and 0 <= nc < w and
-                            (nr, nc) not in visited and frontier_mask[nr, nc]):
-                        visited.add((nr, nc))
-                        queue.append((nr, nc))
+                    nr = r + dr
+                    nc = c + dc
+                    if nr < 0 or nr >= h or nc < 0 or nc >= w:
+                        continue
+                    if (nr, nc) in visited:
+                        continue
+                    if not frontier_mask[nr, nc]:
+                        continue
+                    visited.add((nr, nc))
+                    queue.append((nr, nc))
 
-            size = len(cluster_gx)
-            if size >= self.min_frontier_size:
-                cx = sum(cluster_gx) / size
-                cy = sum(cluster_gy) / size
-                wx, wy = self._grid_to_world(cx, cy)
-                results.append((wx, wy, size))
-
-        return results
-
-    # ════════════════════════════════════════════
-    #  DFS Ağaç: Node Oluşturma
-    # ════════════════════════════════════════════
-
-    def _create_explore_node(self, position, frontiers):
-        """Mevcut konumda yeni DFS node'u oluştur.
-
-        Frontier'ları mesafeye göre UZAKTAN YAKINA sıralar.
-        İlk hedef = en uzak frontier (DFS derinlik öncelikli).
-        """
-        rx, ry = position
-
-        # Blacklist filtrele ve mesafe hesapla
-        scored = []
-        for wx, wy, size in frontiers:
-            if self._is_blacklisted(wx, wy):
+            size = len(cluster_cells)
+            if size < self.min_frontier_size:
                 continue
-            dist = math.sqrt((wx - rx) ** 2 + (wy - ry) ** 2)
-            if dist < self.goal_tolerance:
-                continue
-            scored.append((wx, wy, size, dist))
 
-        # Uzaktan yakına sırala (en uzak ilk = index 0)
-        scored.sort(key=lambda t: t[3], reverse=True)
+            cx = sum(c for _, c in cluster_cells) / size
+            cy = sum(r for r, _ in cluster_cells) / size
+            wx, wy = self._grid_to_world(cx, cy)
+            frontiers.append((wx, wy, size))
 
-        targets = [(s[0], s[1], s[2]) for s in scored]
-
-        node = ExploreNode(position, targets)
-
-        if targets:
-            self.get_logger().info(
-                f"Yeni DFS node: ({rx:.1f}, {ry:.1f}) | "
-                f"{len(targets)} hedef | "
-                f"en uzak: {scored[0][3]:.1f}m | "
-                f"en yakin: {scored[-1][3]:.1f}m")
-
-        return node
-
-    def _is_blacklisted(self, wx, wy):
-        for bx, by in self.blacklisted:
-            if math.sqrt((wx - bx) ** 2 + (wy - by) ** 2) < self.blacklist_radius:
-                return True
-        return False
-
-    # ════════════════════════════════════════════
-    #  Goal Gönderme
-    # ════════════════════════════════════════════
+        return frontiers
 
     def _compute_approach_goal(self, fx, fy, rx, ry):
-        """Frontier'a yaklaşma noktası: frontier'dan robot yönüne offset.
-
-        Böylece hedef bilinen FREE alanda olur, planner daha kolay path bulur.
-        """
         dx = rx - fx
         dy = ry - fy
-        dist = math.sqrt(dx ** 2 + dy ** 2)
-        if dist < 0.5:
+        dist = math.hypot(dx, dy)
+        if dist < 1e-3:
             return fx, fy
 
-        offset = min(self.approach_offset, dist * 0.4)
+        offset = min(self.approach_offset, dist * 0.35)
         gx = fx + (dx / dist) * offset
         gy = fy + (dy / dist) * offset
         return gx, gy
+
+    def _select_goal(self, frontiers, robot_pos):
+        rx, ry = robot_pos
+        if not frontiers:
+            return None
+
+        max_size = max(size for _, _, size in frontiers)
+        candidates = []
+
+        for fx, fy, size in frontiers:
+            dist = math.hypot(fx - rx, fy - ry)
+            if dist < self.min_goal_distance:
+                continue
+            if self._is_blacklisted(fx, fy):
+                continue
+            if self._is_recent_goal(fx, fy):
+                continue
+
+            size_score = size / max_size if max_size > 0 else 0.0
+            distance_score = 1.0 / (1.0 + dist)
+            utility = (
+                self.utility_size_weight * size_score
+                + self.utility_distance_weight * distance_score
+            )
+
+            ax, ay = self._compute_approach_goal(fx, fy, rx, ry)
+            candidates.append((utility, dist, fx, fy, size, ax, ay))
+
+        if not candidates:
+            return None
+
+        # Highest utility first, then nearest among equals.
+        candidates.sort(key=lambda c: (-c[0], c[1]))
+        return candidates[0]
 
     def _send_goal(self, wx, wy):
         msg = PoseStamped()
@@ -332,150 +304,83 @@ class FrontierExplorer(Node):
         self.current_goal = (wx, wy)
         self.goal_sent_time = self.get_clock().now()
 
-    # ════════════════════════════════════════════
-    #  Ana DFS Keşif Döngüsü
-    # ════════════════════════════════════════════
-
     def _explore_tick(self):
         if self.map_data is None:
             return
 
         robot_pos = self._get_robot_position()
         if robot_pos is None:
-            self.get_logger().warn("Robot pozisyonu alinamadi (TF bekleniyor)")
+            self.get_logger().warn("Robot pose unavailable, waiting for TF")
             return
 
-        # Durum yayınla
-        status_msg = Bool()
-        status_msg.data = self.exploring
-        self.exploring_pub.publish(status_msg)
+        active_msg = Bool()
+        active_msg.data = self.exploring
+        self.exploring_pub.publish(active_msg)
 
-        # ── Nav2 FAILED → stack'ten sonraki hedefe geç ──
-        if self.nav_failed:
-            self.nav_failed = False
-            if self._try_next_from_stack(robot_pos):
-                return
-            # Stack boşsa aşağıda yeni node oluşturulacak
-
-        # ── Aktif hedef varsa kontrol et ──
-        if self.current_goal is not None:
+        # Keep current goal alive until reached or timeout.
+        if self.current_goal is not None and self.goal_sent_time is not None:
             gx, gy = self.current_goal
             rx, ry = robot_pos
-            dist = math.sqrt((gx - rx) ** 2 + (gy - ry) ** 2)
+            dist = math.hypot(gx - rx, gy - ry)
 
             if dist < self.goal_tolerance:
                 self.get_logger().info(
-                    f"Hedefe ulasildi ({gx:.1f}, {gy:.1f})")
+                    f"Explorer reached target ({gx:.1f}, {gy:.1f})"
+                )
+                self.recent_goals.append((gx, gy))
                 self.current_goal = None
+                self.goal_sent_time = None
                 self.no_frontier_count = 0
-                # Devam et — aşağıda yeni hedef seçilecek
-
-            elif (self.goal_sent_time is not None and
-                  (self.get_clock().now() - self.goal_sent_time).nanoseconds / 1e9
-                  > self.goal_timeout):
-                # Timeout — blacklist ve stack'ten sonraki hedefe geç
-                self.get_logger().warn(
-                    f"Hedef timeout! Blacklist: ({gx:.1f}, {gy:.1f})")
-                self.blacklisted.append((gx, gy))
-                self.current_goal = None
-                if self._try_next_from_stack(robot_pos):
-                    return
             else:
-                return  # Hala hedefe gidiyoruz
+                elapsed = (
+                    self.get_clock().now() - self.goal_sent_time
+                ).nanoseconds / 1e9
+                if elapsed > self.goal_timeout:
+                    self.get_logger().warn(
+                        f"Goal timeout -> blacklist ({gx:.1f}, {gy:.1f})"
+                    )
+                    self.blacklisted.append((gx, gy))
+                    self.current_goal = None
+                    self.goal_sent_time = None
+                else:
+                    self.exploring = True
+                    return
 
-        # ── Frontier ara ──
         frontiers = self._find_frontiers()
-
         if not frontiers:
             self.no_frontier_count += 1
-            self.get_logger().info(
-                f"Frontier bulunamadi ({self.no_frontier_count}/"
-                f"{self.max_no_frontier})")
-            if self.no_frontier_count >= self.max_no_frontier and self.exploring:
+            if self.no_frontier_count % 2 == 0:
                 self.get_logger().info(
-                    "═══ KESIF TAMAMLANDI ═══ Tum alanlar kesfedildi!")
+                    f"No frontier detected ({self.no_frontier_count}/"
+                    f"{self.max_no_frontier_cycles})"
+                )
+            if self.no_frontier_count >= self.max_no_frontier_cycles and self.exploring:
+                self.get_logger().info("Exploration completed: no frontier remains")
                 self.exploring = False
-                self.explore_stack.clear()
             return
 
-        self.no_frontier_count = 0
-        self.exploring = True
-
-        # ── DFS: Mevcut konumda yeni node oluştur (derinleşme) ──
-        node = self._create_explore_node(robot_pos, frontiers)
-        if node.has_remaining:
-            self.explore_stack.append(node)
-            target = node.current_target
-            node.advance()
-            depth = len(self.explore_stack)
-            remaining = len(node.targets) - node.target_idx
-            rx, ry = robot_pos
-            ax, ay = self._compute_approach_goal(
-                target[0], target[1], rx, ry)
-            self.get_logger().info(
-                f"[DFS derinlik={depth}] Frontier: ({target[0]:.1f}, "
-                f"{target[1]:.1f}) → approach: ({ax:.1f}, {ay:.1f}) "
-                f"| kalan: {remaining}")
-            self._send_goal(ax, ay)
-            return
-
-        # ── Bu konumdan gidilecek yer yok → stack'teki üst node'lardan devam ──
-        if self._try_next_from_stack(robot_pos):
-            return
-
-        # ── Her yer tıkandı — blacklist temizle ve tekrar dene ──
-        if self.blacklist_reset_count < self.max_blacklist_resets:
-            self.blacklist_reset_count += 1
-            old_count = len(self.blacklisted)
-            self.blacklisted.clear()
-            self.get_logger().warn(
-                f"Tum frontier'lar blacklist'te! Blacklist temizlendi "
-                f"({old_count} hedef silindi) "
-                f"[reset {self.blacklist_reset_count}/{self.max_blacklist_resets}]")
-        else:
-            self.get_logger().info(
-                "Tum frontier'lar blacklist/yakin — bekleniyor")
+        choice = self._select_goal(frontiers, robot_pos)
+        if choice is None:
             self.no_frontier_count += 1
+            self.get_logger().info(
+                "No selectable frontier (blacklist/recent filters active)"
+            )
+            # Prevent deadlock when all candidates are filtered.
+            if self.no_frontier_count >= 3 and len(self.recent_goals) > 0:
+                self.recent_goals.clear()
+                self.get_logger().info("Recent-goal memory cleared to continue exploration")
+            return
 
-    def _try_next_from_stack(self, robot_pos):
-        """Stack'teki mevcut node'dan sonraki hedefe gitmeyi dene.
+        utility, dist, fx, fy, size, ax, ay = choice
+        self._send_goal(ax, ay)
+        self.exploring = True
+        self.no_frontier_count = 0
 
-        Returns True eğer bir hedef gönderildiyse, False eğer stack boş.
-        """
-        while self.explore_stack:
-            top = self.explore_stack[-1]
-
-            if top.has_remaining:
-                target = top.current_target
-                top.advance()
-
-                rx, ry = robot_pos
-                dist = math.sqrt(
-                    (target[0] - rx) ** 2 + (target[1] - ry) ** 2)
-
-                depth = len(self.explore_stack)
-                remaining = len(top.targets) - top.target_idx
-                self.get_logger().info(
-                    f"[DFS derinlik={depth}] Hedef: ({target[0]:.1f}, "
-                    f"{target[1]:.1f}) | mesafe: {dist:.1f}m | "
-                    f"bu node'da kalan: {remaining}")
-
-                # Frontier'a yaklaşma noktası hesapla
-                ax, ay = self._compute_approach_goal(
-                    target[0], target[1], rx, ry)
-                self.get_logger().info(
-                    f"  approach: ({ax:.1f}, {ay:.1f})")
-                self._send_goal(ax, ay)
-                return True
-            else:
-                self.explore_stack.pop()
-                self.get_logger().info(
-                    f"Dal tukendi, backtrack | stack derinlik: "
-                    f"{len(self.explore_stack)}")
-
-        return False
-
-
+        self.get_logger().info(
+            f"Goal selected | utility={utility:.3f} | dist={dist:.1f}m | "
+            f"frontier=({fx:.1f}, {fy:.1f}) size={size} | "
+            f"approach=({ax:.1f}, {ay:.1f})"
+        )
 
 
 def main(args=None):
@@ -484,10 +389,11 @@ def main(args=None):
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
-        node.get_logger().info("Frontier Explorer durduruluyor...")
+        node.get_logger().info("Frontier explorer stopped")
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == "__main__":

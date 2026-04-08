@@ -108,6 +108,7 @@ def generate_launch_description():
             # MaxObstacleHeight=1.0 → tavan hariç, duvarlar dahil
             # MaxGroundHeight=-0.2 → drone seviyesindeki duvarlar da engel
             "Grid/FromDepth": "false",
+            "Grid/RayTracing": "true",
             "Grid/RangeMax": "20.0",
             "Grid/RangeMin": "0.3",
             "Grid/CellSize": "0.1",
@@ -129,6 +130,24 @@ def generate_launch_description():
             ("map", "/map"),
         ],
         arguments=["--delete_db_on_start"],
+    )
+
+    # ══════════════════════════════════════════════
+    #  Map Cleaner (/map -> /map_clean)
+    # ══════════════════════════════════════════════
+    map_cleaner = Node(
+        package="px4_offboard",
+        executable="map_cleaner",
+        name="map_cleaner",
+        output="screen",
+        parameters=[{
+            "use_sim_time": use_sim_time,
+            "input_topic": "/map",
+            "output_topic": "/map_clean",
+            "min_obstacle_cluster_size": 10,
+            "enable_unknown_hole_fill": True,
+            "unknown_free_neighbor_threshold": 6,
+        }],
     )
 
     # ══════════════════════════════════════════════
@@ -180,6 +199,7 @@ def generate_launch_description():
         localization_arg,
         odom_node,
         rtabmap_slam,
+        map_cleaner,
         # rtabmap_viz,  # WSL'de GUI yok, rviz2 kullan
         # map_assembler,  # İhtiyaç duyulduğunda aktifleştir
     ])

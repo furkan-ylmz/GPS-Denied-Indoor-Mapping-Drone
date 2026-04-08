@@ -54,13 +54,13 @@
         <ray>
           <scan>
             <horizontal>
-              <samples>360</samples>
+              <samples>240</samples>
               <resolution>1</resolution>
               <min_angle>-3.141592653</min_angle>
               <max_angle>3.141592653</max_angle>
             </horizontal>
             <vertical>
-              <samples>16</samples>
+              <samples>12</samples>
               <resolution>1</resolution>
               <min_angle>-0.1745</min_angle>     <!-- -10° (zemin gürültüsü azalır) -->
               <max_angle>0.1745</max_angle>      <!-- +10° (tavan gürültüsü azalır) -->
@@ -78,7 +78,7 @@
           </noise>
         </ray>
         <always_on>1</always_on>
-        <update_rate>10</update_rate>
+        <update_rate>8</update_rate>
         <visualize>false</visualize>
         <topic>lidar</topic>
       </sensor>
@@ -132,7 +132,7 @@
           <horizontal_fov>1.396</horizontal_fov>  <!-- ~80° -->
           <image>
             <width>640</width>
-            <height>480</height>
+            <height>360</height>
             <format>R8G8B8</format>
           </image>
           <clip>
@@ -141,8 +141,8 @@
           </clip>
         </camera>
         <always_on>1</always_on>
-        <update_rate>15</update_rate>
-        <visualize>true</visualize>
+        <update_rate>10</update_rate>
+        <visualize>false</visualize>
         <topic>camera</topic>
       </sensor>
     </link>
