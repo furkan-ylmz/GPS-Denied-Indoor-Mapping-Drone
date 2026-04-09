@@ -84,15 +84,21 @@ class DroneNavigator(Node):
 
         # ── Parametreler ──
         self.declare_parameter("takeoff_height", 1.0)
-        self.declare_parameter("position_threshold", 0.3)
+        self.declare_parameter("position_threshold", 0.22)
         self.declare_parameter("waypoint_spacing", 0.3)
         self.declare_parameter("setpoint_count_before_offboard", 20)
+        self.declare_parameter("nav_progress_timeout", 6.5)
+        self.declare_parameter("nav_progress_min_delta", 0.12)
 
         self.takeoff_height = self.get_parameter("takeoff_height").value
         self.pos_threshold = self.get_parameter("position_threshold").value
         self.wp_spacing = self.get_parameter("waypoint_spacing").value
         self.setpoint_threshold = self.get_parameter(
             "setpoint_count_before_offboard").value
+        self.nav_progress_timeout = float(
+            self.get_parameter("nav_progress_timeout").value)
+        self.nav_progress_min_delta = float(
+            self.get_parameter("nav_progress_min_delta").value)
 
         # ── PX4 Publishers ──
         self.offboard_pub = self.create_publisher(
@@ -143,6 +149,8 @@ class DroneNavigator(Node):
         self.wp_index = 0
         self.goal_pose_map = None  # Kuyrukta bekleyen hedef (henüz hover'da değilken)
         self.planning_in_progress = False
+        self.nav_progress_best_dist = None
+        self.nav_progress_last_improve_time = None
 
         # ── 20 Hz kontrol döngüsü ──
         self.timer = self.create_timer(0.05, self._control_loop)
@@ -271,6 +279,7 @@ class DroneNavigator(Node):
         self.wp_index = 0
         self.target_ned = self.waypoints_ned[0]
         self.state = State.NAVIGATING
+        self._reset_nav_progress_watchdog()
         self._publish_nav_status("NAVIGATING")
         self.get_logger().info(
             f"Navigasyon basladi: {len(self.waypoints_ned)} waypoint")
@@ -353,6 +362,7 @@ class DroneNavigator(Node):
 
         if self.state in (State.HOVER, State.NAVIGATING):
             self.state = State.NAVIGATING
+            self._reset_nav_progress_watchdog()
             self.get_logger().info(
                 f"Direkt hedef: NED ({wp[0]:.2f}, {wp[1]:.2f}, {wp[2]:.2f})")
 
@@ -426,6 +436,34 @@ class DroneNavigator(Node):
         msg = String()
         msg.data = status
         self.nav_status_pub.publish(msg)
+
+    def _reset_nav_progress_watchdog(self):
+        self.nav_progress_best_dist = self._dist_to_target()
+        self.nav_progress_last_improve_time = self.get_clock().now()
+
+    def _clear_nav_progress_watchdog(self):
+        self.nav_progress_best_dist = None
+        self.nav_progress_last_improve_time = None
+
+    def _nav_progress_stalled(self):
+        now = self.get_clock().now()
+        dist = self._dist_to_target()
+
+        if (
+            self.nav_progress_best_dist is None
+            or self.nav_progress_last_improve_time is None
+        ):
+            self.nav_progress_best_dist = dist
+            self.nav_progress_last_improve_time = now
+            return False
+
+        if dist < (self.nav_progress_best_dist - self.nav_progress_min_delta):
+            self.nav_progress_best_dist = dist
+            self.nav_progress_last_improve_time = now
+            return False
+
+        elapsed = (now - self.nav_progress_last_improve_time).nanoseconds / 1e9
+        return elapsed > self.nav_progress_timeout
 
     # ════════════════════════════════════════════
     #  Ana Kontrol Döngüsü (20Hz)
@@ -503,6 +541,7 @@ class DroneNavigator(Node):
                 self.wp_index += 1
                 if self.wp_index < len(self.waypoints_ned):
                     self.target_ned = self.waypoints_ned[self.wp_index]
+                    self._reset_nav_progress_watchdog()
                     remaining = len(self.waypoints_ned) - self.wp_index
                     self.get_logger().info(
                         f"WP {self.wp_index + 1}/{len(self.waypoints_ned)} | "
@@ -512,7 +551,23 @@ class DroneNavigator(Node):
                     self.get_logger().info("Hedefe ulasildi! -> HOVER")
                     self.goal_pose_map = None
                     self.state = State.HOVER
+                    self._clear_nav_progress_watchdog()
                     self._publish_nav_status("REACHED")
+            elif self._nav_progress_stalled():
+                self.get_logger().warn(
+                    "Navigasyon ilerlemiyor -> FAILED, HOVER'a donuluyor"
+                )
+                self.waypoints_ned = []
+                self.wp_index = 0
+                self.goal_pose_map = None
+                self.target_ned = [
+                    float(self.pos_ned[0]),
+                    float(self.pos_ned[1]),
+                    -float(self.takeoff_height),
+                ]
+                self.state = State.HOVER
+                self._clear_nav_progress_watchdog()
+                self._publish_nav_status("FAILED")
 
     def do_land(self):
         """İniş komutu gönder."""
