@@ -42,8 +42,13 @@ class FrontierExplorer(Node):
         self.declare_parameter("robot_frame", "base_link")
         self.declare_parameter("costmap_topic", "/map_clean")
         self.declare_parameter("goal_timeout", 15.0)
-        self.declare_parameter("approach_offset", 1.5)
-        self.declare_parameter("min_goal_distance", 0.8)
+        self.declare_parameter("approach_offset", 1.9)
+        self.declare_parameter("min_goal_distance", 1.1)
+
+        # Approach safety filter
+        self.declare_parameter("approach_safety_radius_cells", 1)
+        self.declare_parameter("approach_occupied_threshold", 65)
+        self.declare_parameter("approach_min_free_ratio", 0.6)
 
         # Utility score tuning
         self.declare_parameter("utility_size_weight", 1.0)
@@ -51,6 +56,7 @@ class FrontierExplorer(Node):
 
         # Anti-repeat / stuck handling
         self.declare_parameter("blacklist_radius", 1.0)
+        self.declare_parameter("blacklist_ttl_sec", 180.0)
         self.declare_parameter("recent_goal_radius", 1.2)
         self.declare_parameter("recent_goal_memory", 10)
         self.declare_parameter("max_no_frontier_cycles", 8)
@@ -63,6 +69,15 @@ class FrontierExplorer(Node):
         self.goal_timeout = float(self.get_parameter("goal_timeout").value)
         self.approach_offset = float(self.get_parameter("approach_offset").value)
         self.min_goal_distance = float(self.get_parameter("min_goal_distance").value)
+        self.approach_safety_radius_cells = max(
+            0, int(self.get_parameter("approach_safety_radius_cells").value)
+        )
+        self.approach_occupied_threshold = int(
+            self.get_parameter("approach_occupied_threshold").value
+        )
+        self.approach_min_free_ratio = float(
+            self.get_parameter("approach_min_free_ratio").value
+        )
 
         self.utility_size_weight = float(
             self.get_parameter("utility_size_weight").value
@@ -72,6 +87,7 @@ class FrontierExplorer(Node):
         )
 
         self.blacklist_radius = float(self.get_parameter("blacklist_radius").value)
+        self.blacklist_ttl_sec = float(self.get_parameter("blacklist_ttl_sec").value)
         self.recent_goal_radius = float(self.get_parameter("recent_goal_radius").value)
         self.recent_goal_memory = max(
             1, int(self.get_parameter("recent_goal_memory").value)
@@ -126,6 +142,23 @@ class FrontierExplorer(Node):
             f"{self.utility_distance_weight:.2f})"
         )
 
+    def _now_sec(self):
+        return self.get_clock().now().nanoseconds / 1e9
+
+    def _prune_blacklist(self):
+        if not self.blacklisted:
+            return
+        now_sec = self._now_sec()
+        self.blacklisted = [
+            (bx, by, expires_at)
+            for bx, by, expires_at in self.blacklisted
+            if expires_at > now_sec
+        ]
+
+    def _add_blacklist(self, wx, wy):
+        expires_at = self._now_sec() + self.blacklist_ttl_sec
+        self.blacklisted.append((wx, wy, expires_at))
+
     def _map_cb(self, msg: OccupancyGrid):
         self.map_info = msg.info
         self.map_data = np.asarray(msg.data, dtype=np.int16).reshape(
@@ -139,9 +172,9 @@ class FrontierExplorer(Node):
         gx, gy = self.current_goal
         if msg.data == "FAILED":
             self.get_logger().warn(
-                f"Navigator failed -> blacklist ({gx:.1f}, {gy:.1f})"
+                f"Navigator failed -> temporary blacklist ({gx:.1f}, {gy:.1f})"
             )
-            self.blacklisted.append((gx, gy))
+            self._add_blacklist(gx, gy)
             self.current_goal = None
             self.goal_sent_time = None
         elif msg.data == "REACHED":
@@ -171,8 +204,28 @@ class FrontierExplorer(Node):
         res = self.map_info.resolution
         return (ox + (gx + 0.5) * res, oy + (gy + 0.5) * res)
 
+    def _world_to_grid(self, wx, wy):
+        if self.map_info is None:
+            return None
+
+        ox = self.map_info.origin.position.x
+        oy = self.map_info.origin.position.y
+        res = self.map_info.resolution
+
+        if res <= 0.0:
+            return None
+
+        col = int((wx - ox) / res)
+        row = int((wy - oy) / res)
+
+        if row < 0 or row >= self.map_info.height or col < 0 or col >= self.map_info.width:
+            return None
+
+        return row, col
+
     def _is_blacklisted(self, wx, wy):
-        for bx, by in self.blacklisted:
+        self._prune_blacklist()
+        for bx, by, _ in self.blacklisted:
             if math.hypot(wx - bx, wy - by) < self.blacklist_radius:
                 return True
         return False
@@ -182,6 +235,35 @@ class FrontierExplorer(Node):
             if math.hypot(wx - rx, wy - ry) < self.recent_goal_radius:
                 return True
         return False
+
+    def _is_approach_safe(self, wx, wy):
+        if self.map_data is None or self.map_info is None:
+            return False
+
+        rc = self._world_to_grid(wx, wy)
+        if rc is None:
+            return False
+
+        row, col = rc
+        if self.map_data[row, col] != FREE:
+            return False
+
+        h, w = self.map_data.shape
+        radius = self.approach_safety_radius_cells
+        r0 = max(0, row - radius)
+        r1 = min(h, row + radius + 1)
+        c0 = max(0, col - radius)
+        c1 = min(w, col + radius + 1)
+        patch = self.map_data[r0:r1, c0:c1]
+
+        occupied_count = int(
+            np.count_nonzero(patch >= self.approach_occupied_threshold)
+        )
+        if occupied_count > 0:
+            return False
+
+        free_ratio = float(np.count_nonzero(patch == FREE)) / float(patch.size)
+        return free_ratio >= self.approach_min_free_ratio
 
     def _find_frontiers(self):
         if self.map_data is None or self.map_info is None:
@@ -282,6 +364,8 @@ class FrontierExplorer(Node):
             )
 
             ax, ay = self._compute_approach_goal(fx, fy, rx, ry)
+            if not self._is_approach_safe(ax, ay):
+                continue
             candidates.append((utility, dist, fx, fy, size, ax, ay))
 
         if not candidates:
@@ -313,6 +397,8 @@ class FrontierExplorer(Node):
             self.get_logger().warn("Robot pose unavailable, waiting for TF")
             return
 
+        self._prune_blacklist()
+
         active_msg = Bool()
         active_msg.data = self.exploring
         self.exploring_pub.publish(active_msg)
@@ -337,9 +423,9 @@ class FrontierExplorer(Node):
                 ).nanoseconds / 1e9
                 if elapsed > self.goal_timeout:
                     self.get_logger().warn(
-                        f"Goal timeout -> blacklist ({gx:.1f}, {gy:.1f})"
+                        f"Goal timeout -> temporary blacklist ({gx:.1f}, {gy:.1f})"
                     )
-                    self.blacklisted.append((gx, gy))
+                    self._add_blacklist(gx, gy)
                     self.current_goal = None
                     self.goal_sent_time = None
                 else:
@@ -363,7 +449,7 @@ class FrontierExplorer(Node):
         if choice is None:
             self.no_frontier_count += 1
             self.get_logger().info(
-                "No selectable frontier (blacklist/recent filters active)"
+                "No selectable frontier (blacklist/recent/safety filters active)"
             )
             # Prevent deadlock when all candidates are filtered.
             if self.no_frontier_count >= 3 and len(self.recent_goals) > 0:
