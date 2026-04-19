@@ -9,6 +9,7 @@ import termios
 import tty
 import threading
 import select
+import math
 
 import rclpy
 from rclpy.node import Node
@@ -39,7 +40,8 @@ HELP = """
 ║  t   : Arm + Offboard + Takeoff      ║
 ║  w/s : Ileri / Geri (+x/-x)  [0.5m]  ║
 ║  a/d : Sol / Sag   (+y/-y)   [0.5m]  ║
-║  q/e : Yukari / Asagi        [0.3m]  ║
+║  q/e : Yukari / Asagi        [0.15m] ║
+║  z/c : Sola don / Saga don (Yaw)     ║
 ║  l   : Land (inis)                    ║
 ║  SPC : Hover (yerinde dur)            ║
 ║  ESC : Cikis                          ║
@@ -54,6 +56,7 @@ class DroneTeleop(Node):
 
         self.step_xy = 0.5
         self.step_z = 0.15
+        self.step_yaw = 0.2
         self.takeoff_alt = 1.0
 
         # ── Publishers ──
@@ -75,6 +78,7 @@ class DroneTeleop(Node):
         # ── Durum ──
         self.pos = [0.0, 0.0, 0.0]
         self.target = [0.0, 0.0, -self.takeoff_alt]
+        self.target_yaw = 0.0
         self.armed = False
         self.nav_state = 0
         self.offboard_counter = 0
@@ -117,7 +121,7 @@ class DroneTeleop(Node):
         sp.position = [float(self.target[0]), float(self.target[1]), float(self.target[2])]
         sp.velocity = [float("nan"), float("nan"), float("nan")]
         sp.acceleration = [float("nan"), float("nan"), float("nan")]
-        sp.yaw = float("nan")
+        sp.yaw = float(self.target_yaw)
         sp.timestamp = ts
         self.setpoint_pub.publish(sp)
 
@@ -190,21 +194,29 @@ class DroneTeleop(Node):
 
     def _handle_key(self, key):
         t = self.target
+        yaw = self.target_yaw
+
         if key == "t":
             self.do_takeoff()
         elif key == "l":
             self.do_land()
         elif key == "w":
-            t[0] += self.step_xy
+            t[0] += self.step_xy * math.cos(yaw)
+            t[1] += self.step_xy * math.sin(yaw)
             print(f"  > Ileri  | x={t[0]:.1f} y={t[1]:.1f} z={t[2]:.1f}")
         elif key == "s":
-            t[0] -= self.step_xy
+            t[0] -= self.step_xy * math.cos(yaw)
+            t[1] -= self.step_xy * math.sin(yaw)
             print(f"  > Geri   | x={t[0]:.1f} y={t[1]:.1f} z={t[2]:.1f}")
         elif key == "a":
-            t[1] += self.step_xy
+            # Drone'un soluna git (-y body frame, dx_w = sin(yaw), dy_w = -cos(yaw))
+            t[0] += self.step_xy * math.sin(yaw)
+            t[1] -= self.step_xy * math.cos(yaw)
             print(f"  > Sol    | x={t[0]:.1f} y={t[1]:.1f} z={t[2]:.1f}")
         elif key == "d":
-            t[1] -= self.step_xy
+            # Drone'un sagina git (+y body frame, dx_w = -sin(yaw), dy_w = cos(yaw))
+            t[0] -= self.step_xy * math.sin(yaw)
+            t[1] += self.step_xy * math.cos(yaw)
             print(f"  > Sag    | x={t[0]:.1f} y={t[1]:.1f} z={t[2]:.1f}")
         elif key == "q":
             t[2] -= self.step_z
@@ -212,6 +224,12 @@ class DroneTeleop(Node):
         elif key == "e":
             t[2] += self.step_z
             print(f"  > Asagi  | x={t[0]:.1f} y={t[1]:.1f} z={t[2]:.1f}")
+        elif key == "z":
+            self.target_yaw -= self.step_yaw  # Sola dön
+            print(f"  > Yaw L  | yaw={self.target_yaw:.2f} rad")
+        elif key == "c":
+            self.target_yaw += self.step_yaw  # Saga don
+            print(f"  > Yaw R  | yaw={self.target_yaw:.2f} rad")
         elif key == " ":
             self.target = list(self.pos)
             t = self.target

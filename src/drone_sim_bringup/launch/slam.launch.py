@@ -31,6 +31,10 @@ def generate_launch_description():
         "use_sim_time", default_value="true",
         description="Gazebo sim time kullan")
 
+    localization_arg = DeclareLaunchArgument(
+        "localization", default_value="false",
+        description="true=sadece lokalizasyon (mevcut haritayla), false=SLAM (haritalama)")
+
     resume_arg = DeclareLaunchArgument(
         "resume", default_value="false",
         description="true=önceki rtabmap.db üzerinden haritaya devam et, false=sıfırdan başla ve db'yi sil")
