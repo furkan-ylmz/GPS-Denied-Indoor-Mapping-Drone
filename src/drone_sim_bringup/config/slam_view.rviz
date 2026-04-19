@@ -58,7 +58,7 @@ Visualization Manager:
         Reliability Policy: Reliable
       Use Timestamp: false
       Update Topic:
-        Value: ""
+        Value: /map_clean_updates
 
     # ── 3D Point Cloud Map (RTAB-Map tarafından üretilir) ──
     - Class: rviz_default_plugins/PointCloud2

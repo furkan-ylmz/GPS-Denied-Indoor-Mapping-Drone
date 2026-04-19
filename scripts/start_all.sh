@@ -15,6 +15,7 @@
 #   bash scripts/start_all.sh             # Otomatik hover (offboard_control)
 #   bash scripts/start_all.sh nav         # Nav2 otonom nav (RViz2'den hedef ver)
 #   bash scripts/start_all.sh explore     # Otonom keşif (frontier exploration)
+#   bash scripts/start_all.sh explore resume # Keşfe eski haritadan devam et
 #   bash scripts/start_all.sh teleop      # Klavye ile kontrol
 #   bash scripts/start_all.sh novis       # RViz2 kapalı
 #   bash scripts/start_all.sh nav novis   # Nav2 + RViz yok
@@ -33,12 +34,15 @@ DDS_DIR="$HOME/Micro-XRCE-DDS-Agent"
 # ── Argümanlar ──
 MODE="offboard"      # offboard | teleop | nav
 VIS="true"           # true | false
+RESUME="false"       # true | false
+
 for arg in "$@"; do
     case "$arg" in
         teleop)  MODE="teleop" ;;
         nav)     MODE="nav" ;;
         explore) MODE="explore" ;;
         novis)   VIS="false" ;;
+        resume)  RESUME="true" ;;
     esac
 done
 
@@ -76,7 +80,7 @@ fi
 echo ""
 echo -e "${GREEN}╔══════════════════════════════════════════════════════╗${NC}"
 echo -e "${GREEN}║        Drone SLAM Simülasyonu Başlatılıyor          ║${NC}"
-echo -e "${GREEN}║   Mod: ${YELLOW}${MODE}${GREEN}  |  RViz: ${YELLOW}${VIS}${GREEN}                            ║${NC}"
+echo -e "${GREEN}║   Mod: ${YELLOW}${MODE}${GREEN}  |  RViz: ${YELLOW}${VIS}${GREEN}  |  Resume: ${YELLOW}${RESUME}${GREEN}            ║${NC}"
 echo -e "${GREEN}╚══════════════════════════════════════════════════════╝${NC}"
 echo -e "${CYAN}[INFO]${NC}  Spawn pose: x=${SPAWN_X} y=${SPAWN_Y} z=${SPAWN_Z} yaw=${SPAWN_YAW}"
 echo ""
@@ -176,8 +180,8 @@ fi
 ###############################################################################
 # 4) SLAM (odom_publisher + RTAB-Map)
 ###############################################################################
-info "4/7 SLAM başlatılıyor (odom_publisher + RTAB-Map)..."
-ros2 launch drone_sim_bringup slam.launch.py > /tmp/slam.log 2>&1 &
+info "4/7 SLAM başlatılıyor (odom_publisher + RTAB-Map) | Resume=${RESUME}..."
+ros2 launch drone_sim_bringup slam.launch.py resume:=${RESUME} > /tmp/slam.log 2>&1 &
 SLAM_PID=$!
 echo "$SLAM_PID" > /tmp/drone_sim_slam.pid
 sleep 5

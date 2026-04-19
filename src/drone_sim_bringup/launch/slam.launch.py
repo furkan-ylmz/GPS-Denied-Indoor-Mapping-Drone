@@ -20,6 +20,7 @@ Kullanım:
 
 from launch import LaunchDescription
 from launch.actions import DeclareLaunchArgument
+from launch.conditions import IfCondition, UnlessCondition
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 
@@ -30,12 +31,13 @@ def generate_launch_description():
         "use_sim_time", default_value="true",
         description="Gazebo sim time kullan")
 
-    localization_arg = DeclareLaunchArgument(
-        "localization", default_value="false",
-        description="true=sadece lokalizasyon (mevcut haritayla), false=SLAM (haritalama)")
+    resume_arg = DeclareLaunchArgument(
+        "resume", default_value="false",
+        description="true=önceki rtabmap.db üzerinden haritaya devam et, false=sıfırdan başla ve db'yi sil")
 
     use_sim_time = LaunchConfiguration("use_sim_time")
     localization = LaunchConfiguration("localization")
+    resume = LaunchConfiguration("resume")
 
     # ══════════════════════════════════════════════
     #  PX4 Odometry → ROS 2 Odometry + TF
@@ -51,85 +53,75 @@ def generate_launch_description():
     # ══════════════════════════════════════════════
     #  RTAB-Map SLAM (3D LiDAR ICP modu)
     # ══════════════════════════════════════════════
-    # RTAB-Map parametreleri:
-    #   - Reg/Strategy=1: ICP (point cloud registration)
-    #   - ICP/VoxelSize: Downsampling (kapalı alan için 0.1m yeterli)
-    #   - ICP/MaxCorrespondenceDistance: ICP eşleştirme mesafesi
-    #   - Grid/FromDepth=false: LiDAR'dan 3D grid oluştur
-    #   - RGBD/ProximityBySpace=true: Yakın node'lar arasında loop closure
-    rtabmap_slam = Node(
+    rtabmap_parameters = {
+        "use_sim_time": use_sim_time,
+        "frame_id": "base_link",
+        "odom_frame_id": "odom",
+        "map_frame_id": "map",
+        "subscribe_depth": False,
+        "subscribe_rgb": False,
+        "subscribe_scan_cloud": True,
+        "approx_sync": True,
+        "queue_size": 10,
+        "Reg/Strategy": "1",
+        "Reg/Force3DoF": "false",
+        "ICP/VoxelSize": "0.1",
+        "ICP/MaxCorrespondenceDistance": "1.5",
+        "ICP/PointToPlane": "true",
+        "ICP/PointToPlaneK": "20",
+        "ICP/Iterations": "30",
+        "ICP/Epsilon": "0.001",
+        "ICP/MaxTranslation": "2.0",
+        "RGBD/ProximityBySpace": "true",
+        "RGBD/ProximityMaxGraphDepth": "0",
+        "RGBD/ProximityPathMaxNeighbors": "10",
+        "RGBD/AngularUpdate": "0.05",
+        "RGBD/LinearUpdate": "0.05",
+        "RGBD/OptimizeFromGraphEnd": "false",
+        "RGBD/NeighborLinkRefining": "true",
+        "Mem/NotLinkedNodesKept": "false",
+        "Mem/STMSize": "30",
+        "Grid/FromDepth": "false",
+        "Grid/RayTracing": "true",
+        "Grid/RangeMax": "20.0",
+        "Grid/RangeMin": "0.3",
+        "Grid/CellSize": "0.1",
+        "Grid/ClusterRadius": "0.3",
+        "Grid/3D": "true",
+        "Grid/MaxGroundHeight": "-0.2",
+        "Grid/MaxObstacleHeight": "1.0",
+        "Grid/NormalsSegmentation": "true",
+        "Grid/NoiseFilteringRadius": "0.3",
+        "Grid/NoiseFilteringMinNeighbors": "5",
+        "Optimizer/Strategy": "1",
+        "Optimizer/GravitySigma": "0.3",
+    }
+
+    rtabmap_remappings = [
+        ("scan_cloud", "/drone/lidar/points"),
+        ("odom", "/drone/odom"),
+        ("map", "/map"),
+    ]
+
+    rtabmap_slam_new = Node(
         package="rtabmap_slam",
         executable="rtabmap",
         name="rtabmap",
         output="screen",
-        parameters=[{
-            "use_sim_time": use_sim_time,
-
-            # ── Genel ──
-            "frame_id": "base_link",
-            "odom_frame_id": "odom",
-            "map_frame_id": "map",
-            "subscribe_depth": False,
-            "subscribe_rgb": False,
-            "subscribe_scan_cloud": True,
-            "approx_sync": True,
-            "queue_size": 10,
-
-            # ── RTAB-Map parametreleri ──
-            # Registration: ICP (LiDAR tabanlı)
-            "Reg/Strategy": "1",
-            "Reg/Force3DoF": "false",
-
-            # ICP ayarları
-            "ICP/VoxelSize": "0.1",
-            "ICP/MaxCorrespondenceDistance": "1.5",
-            "ICP/PointToPlane": "true",
-            "ICP/PointToPlaneK": "20",
-            "ICP/Iterations": "30",
-            "ICP/Epsilon": "0.001",
-            "ICP/MaxTranslation": "2.0",
-
-            # Graph SLAM
-            "RGBD/ProximityBySpace": "true",
-            "RGBD/ProximityMaxGraphDepth": "0",
-            "RGBD/ProximityPathMaxNeighbors": "10",
-            "RGBD/AngularUpdate": "0.05",
-            "RGBD/LinearUpdate": "0.05",
-            "RGBD/OptimizeFromGraphEnd": "false",
-            "RGBD/NeighborLinkRefining": "true",
-
-            # Bellek yönetimi (WSL sınırlı RAM)
-            "Mem/NotLinkedNodesKept": "false",
-            "Mem/STMSize": "30",
-
-            # 3D Grid / OccupancyGrid (iç mekan optimizasyonu)
-            # Yükseklik değerleri base_link'e göre (drone merkezi)
-            # Drone 1.0m'de uçar. Tavan ~1.3m yukarıda.
-            # MaxObstacleHeight=1.0 → tavan hariç, duvarlar dahil
-            # MaxGroundHeight=-0.2 → drone seviyesindeki duvarlar da engel
-            "Grid/FromDepth": "false",
-            "Grid/RayTracing": "true",
-            "Grid/RangeMax": "20.0",
-            "Grid/RangeMin": "0.3",
-            "Grid/CellSize": "0.1",
-            "Grid/ClusterRadius": "0.3",
-            "Grid/3D": "true",
-            "Grid/MaxGroundHeight": "-0.2",
-            "Grid/MaxObstacleHeight": "1.0",
-            "Grid/NormalsSegmentation": "true",
-            "Grid/NoiseFilteringRadius": "0.3",
-            "Grid/NoiseFilteringMinNeighbors": "5",
-
-            # Optimizer
-            "Optimizer/Strategy": "1",  # g2o
-            "Optimizer/GravitySigma": "0.3",
-        }],
-        remappings=[
-            ("scan_cloud", "/drone/lidar/points"),
-            ("odom", "/drone/odom"),
-            ("map", "/map"),
-        ],
+        parameters=[rtabmap_parameters],
+        remappings=rtabmap_remappings,
         arguments=["--delete_db_on_start"],
+        condition=UnlessCondition(resume)
+    )
+
+    rtabmap_slam_resume = Node(
+        package="rtabmap_slam",
+        executable="rtabmap",
+        name="rtabmap",
+        output="screen",
+        parameters=[rtabmap_parameters],
+        remappings=rtabmap_remappings,
+        condition=IfCondition(resume)
     )
 
     # ══════════════════════════════════════════════
@@ -195,10 +187,12 @@ def generate_launch_description():
     )
 
     return LaunchDescription([
+        resume_arg,
         use_sim_time_arg,
         localization_arg,
         odom_node,
-        rtabmap_slam,
+        rtabmap_slam_new,
+        rtabmap_slam_resume,
         map_cleaner,
         # rtabmap_viz,  # WSL'de GUI yok, rviz2 kullan
         # map_assembler,  # İhtiyaç duyulduğunda aktifleştir
