@@ -65,8 +65,8 @@ def generate_launch_description():
         executable="static_transform_publisher",
         name="lidar_tf",
         arguments=[
-            "--x", "0", "--y", "0", "--z", "0.08",
-            "--roll", "0", "--pitch", "0", "--yaw", "0",
+            "--x", "0.15", "--y", "0", "--z", "0",
+            "--roll", "0", "--pitch", "1.570796", "--yaw", "0",
             "--frame-id", "base_link", "--child-frame-id", "lidar_link",
         ],
     )
