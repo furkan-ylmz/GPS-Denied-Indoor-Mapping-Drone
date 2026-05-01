@@ -87,7 +87,7 @@ def generate_launch_description():
         "Mem/STMSize": "30",
         "Grid/FromDepth": "false",
         "Grid/RayTracing": "true",
-        "Grid/RangeMax": "20.0",
+        "Grid/RangeMax": "25.0",
         "Grid/RangeMin": "0.3",
         "Grid/CellSize": "0.1",
         "Grid/ClusterRadius": "0.3",
