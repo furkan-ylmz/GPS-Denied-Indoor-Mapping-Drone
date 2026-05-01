@@ -16,7 +16,7 @@
     <link name="lidar_link">
       <pose relative_to="base_link">0 0 0.08 0 0 0</pose>
       <inertial>
-        <mass>0.3</mass>
+        <mass>0.23</mass>
         <inertia>
           <ixx>0.0003</ixx>
           <ixy>0</ixy>
@@ -54,21 +54,21 @@
         <ray>
           <scan>
             <horizontal>
-              <samples>240</samples>
+              <samples>360</samples>
               <resolution>1</resolution>
               <min_angle>-3.141592653</min_angle>
               <max_angle>3.141592653</max_angle>
             </horizontal>
             <vertical>
-              <samples>12</samples>
+              <samples>90</samples>
               <resolution>1</resolution>
-              <min_angle>-0.1745</min_angle>     <!-- -10° (zemin gürültüsü azalır) -->
-              <max_angle>0.1745</max_angle>      <!-- +10° (tavan gürültüsü azalır) -->
+              <min_angle>0.0</min_angle>
+              <max_angle>1.5708</max_angle>
             </vertical>
           </scan>
           <range>
             <min>0.3</min>
-            <max>15.0</max>
+            <max>25.0</max>
             <resolution>0.01</resolution>
           </range>
           <noise>
