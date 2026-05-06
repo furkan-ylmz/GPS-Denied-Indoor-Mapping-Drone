@@ -7,7 +7,7 @@
 | Bileşen | Açıklama | Durum |
 |---------|----------|-------|
 | **3D LiDAR SLAM** | RTAB-Map ICP ile kapalı alan haritalama | ✅ Çalışıyor |
-| **Otonom Navigasyon** | Nav2 path planning + PX4 position control | ✅ Çalışıyor |
+| **Otonom Keşif & Navigasyon** | Frontier-based keşif + Nav2 path planning + PX4 kontrolü | ✅ Çalışıyor |
 | **Offboard Uçuş** | PX4 offboard mod, arm/takeoff/hover/navigate/land | ✅ Çalışıyor |
 | **Sensör Füzyonu** | 16 kanal 3D LiDAR + RGB kamera | ✅ Çalışıyor |
 | **Kapı Tanıma (OCR)** | Kamera ile kapı numaralarını okuma | ⬜ Planlanıyor |
@@ -77,8 +77,10 @@ drone_project/
 │   │   └── px4_offboard/
 │   │       ├── offboard_control.py  # Otomatik arm + takeoff + hover
 │   │       ├── drone_teleop.py      # Klavye ile uçuş (wasd)
+│   │       ├── frontier_explorer.py # Otonom sınır (frontier) tabanlı keşif
+│   │       ├── map_cleaner.py       # Harita gürültü filtresi
 │   │       ├── odom_publisher.py    # PX4 NED→ENU + TF (odom→base_link)
-│   │       └── drone_navigator.py   # Nav2 + PX4 otonom navigasyon
+│   │       └── drone_navigator.py   # Nav2 + PX4 otonom hedef takibi
 │   │
 │   ├── drone_sim_bringup/           # Launch & config paketi (ament_cmake)
 │   │   ├── package.xml / CMakeLists.txt
@@ -139,8 +141,8 @@ colcon build --symlink-install --parallel-workers 1  # px4_msgs OOM önlemi
 ```bash
 cd ~/drone_project
 
-# Nav2 Otonom Navigasyon — RViz2'den hedef belirleme
-bash scripts/start_all.sh nav
+# Otonom Keşif — Frontier tabanlı haritalama
+bash scripts/start_all.sh explore
 
 # Offboard Hover — otomatik kalkış + havada bekle
 bash scripts/start_all.sh
@@ -149,7 +151,7 @@ bash scripts/start_all.sh
 bash scripts/start_all.sh teleop
 
 # RViz2 olmadan (headless test)
-bash scripts/start_all.sh nav novis
+bash scripts/start_all.sh explore novis
 bash scripts/start_all.sh novis
 ```
 
@@ -299,15 +301,15 @@ tail -f /tmp/nav2.log       # Nav2
 - [x] TF zinciri: map → odom → base_link → lidar_link/camera_link
 - [x] COM_RC_IN_MODE=4 ile SITL arming sorunu çözüldü
 
-### Faz 5 — Otonom Navigasyon ✅
+### Faz 5 — Otonom Keşif ve Navigasyon ✅
 - [x] Nav2 planner_server + NavfnPlanner (A\*)
 - [x] Global costmap (StaticLayer + InflationLayer, 0.1m, RTAB-Map /map)
+- [x] map_cleaner.py — Harita gürültü filtresi
+- [x] frontier_explorer.py — Otonom sınır (frontier) tabanlı keşif algoritması
 - [x] drone_navigator.py — Nav2 ComputePathToPose + PX4 waypoint takibi
 - [x] ENU↔NED koordinat dönüşümü (TF map→odom + swap)
-- [x] RViz2'den /goal_pose ile hedef belirleme
 - [x] /drone/planned_path görselleştirmesi
-- [x] Nav2 yoksa fallback (direkt hedefe gitme)
-- [x] start_all.sh nav modu
+- [x] start_all.sh explore modu
 
 ### Faz 6 — Kapı Numarası Tanıma (OCR) ⬜
 - [ ] OCR modeli seçimi ve kurulumu (EasyOCR / PaddleOCR)

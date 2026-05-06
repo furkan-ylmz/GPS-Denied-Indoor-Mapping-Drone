@@ -7,18 +7,16 @@
 #   2. Micro XRCE-DDS Agent (arka plan)
 #   3. ROS-Gazebo Bridge    (arka plan)
 #   4. SLAM (odom + RTAB-Map) (arka plan)
-#   5. Nav2 Planner          (arka plan, sadece nav modunda)
+#   5. Nav2 Planner          (arka plan, sadece explore modunda)
 #   6. RViz2 görselleştirme  (arka plan, opsiyonel)
 #   7. Uçuş kontrolü         (interaktif)
 #
 # Kullanım:
 #   bash scripts/start_all.sh             # Otomatik hover (offboard_control)
-#   bash scripts/start_all.sh nav         # Nav2 otonom nav (RViz2'den hedef ver)
 #   bash scripts/start_all.sh explore     # Otonom keşif (frontier exploration)
 #   bash scripts/start_all.sh explore resume # Keşfe eski haritadan devam et
 #   bash scripts/start_all.sh teleop      # Klavye ile kontrol
 #   bash scripts/start_all.sh novis       # RViz2 kapalı
-#   bash scripts/start_all.sh nav novis   # Nav2 + RViz yok
 #
 # Kapatma:
 #   bash scripts/stop_all.sh
@@ -32,14 +30,13 @@ PX4_DIR="$HOME/PX4-Autopilot"
 DDS_DIR="$HOME/Micro-XRCE-DDS-Agent"
 
 # ── Argümanlar ──
-MODE="offboard"      # offboard | teleop | nav
+MODE="offboard"      # offboard | teleop | explore
 VIS="true"           # true | false
 RESUME="false"       # true | false
 
 for arg in "$@"; do
     case "$arg" in
         teleop)  MODE="teleop" ;;
-        nav)     MODE="nav" ;;
         explore) MODE="explore" ;;
         novis)   VIS="false" ;;
         resume)  RESUME="true" ;;
@@ -194,9 +191,9 @@ else
 fi
 
 ###############################################################################
-# 5) Nav2 Planner (sadece nav modunda)
+# 5) Nav2 Planner (sadece explore modunda)
 ###############################################################################
-if [ "$MODE" = "nav" ] || [ "$MODE" = "explore" ]; then
+if [ "$MODE" = "explore" ]; then
     info "5/7 Nav2 Planner başlatılıyor..."
     ros2 launch drone_sim_bringup nav2.launch.py > /tmp/nav2.log 2>&1 &
     NAV2_PID=$!
@@ -236,17 +233,7 @@ fi
 echo ""
 echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
 
-if [ "$MODE" = "nav" ]; then
-    info "7/7 Drone Navigator başlatılıyor (Nav2 otonom navigasyon)..."
-    echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
-    echo ""
-    echo -e "${YELLOW}  Drone otomatik kalkış yapacak, sonra HOVER'da bekleyecek.${NC}"
-    echo -e "${YELLOW}  RViz2'de '2D Nav Goal' ile harita üzerinde hedef belirleyin.${NC}"
-    echo -e "${YELLOW}  Ctrl+C ile iniş yapılır.${NC}"
-    echo ""
-    ros2 run px4_offboard drone_navigator
-
-elif [ "$MODE" = "explore" ]; then
+if [ "$MODE" = "explore" ]; then
     info "7/7 Otonom Keşif başlatılıyor (Frontier Explorer + Navigator)..."
     echo -e "${GREEN}════════════════════════════════════════════════════════${NC}"
     echo ""
