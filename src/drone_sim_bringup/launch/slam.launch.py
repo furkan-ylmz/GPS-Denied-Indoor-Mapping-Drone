@@ -92,8 +92,8 @@ def generate_launch_description():
         "Grid/CellSize": "0.1",
         "Grid/ClusterRadius": "0.3",
         "Grid/3D": "true",
-        "Grid/MaxGroundHeight": "-0.2",
-        "Grid/MaxObstacleHeight": "1.0",
+        "Grid/MaxGroundHeight": "0.0",
+        "Grid/MaxObstacleHeight": "0.0",
         "Grid/NormalsSegmentation": "true",
         "Grid/NoiseFilteringRadius": "0.3",
         "Grid/NoiseFilteringMinNeighbors": "5",
@@ -104,7 +104,7 @@ def generate_launch_description():
     rtabmap_remappings = [
         ("scan_cloud", "/drone/lidar/points"),
         ("odom", "/drone/odom"),
-        ("map", "/map"),
+        ("map", "/rtabmap/map"),
     ]
 
     rtabmap_slam_new = Node(
@@ -173,20 +173,24 @@ def generate_launch_description():
     # ══════════════════════════════════════════════
     #  Map → OccupancyGrid 2D (Nav2 uyumlu)
     # ══════════════════════════════════════════════
+    map_assembler_params = rtabmap_parameters.copy()
+    map_assembler_params.update({
+        "regenerate_local_grids": True,
+        "Grid/Sensor": "0",
+        "Grid/MaxObstacleHeight": "0.3",
+        "Grid/MaxGroundHeight": "0.0",
+    })
+
     map_assembler = Node(
         package="rtabmap_util",
         executable="map_assembler",
         name="map_assembler",
         output="screen",
-        parameters=[{
-            "use_sim_time": use_sim_time,
-            "Grid/FromDepth": "false",
-            "Grid/RangeMax": "20.0",
-            "Grid/CellSize": "0.1",
-        }],
+        parameters=[map_assembler_params],
         remappings=[
             ("map", "/map"),
-            ("mapData", "/rtabmap/mapData"),
+            ("mapData", "/mapData"),
+            ("cloud_map", "/map_assembler/cloud_map"),
         ],
     )
 
@@ -199,5 +203,5 @@ def generate_launch_description():
         rtabmap_slam_resume,
         map_cleaner,
         # rtabmap_viz,  # WSL'de GUI yok, rviz2 kullan
-        # map_assembler,  # İhtiyaç duyulduğunda aktifleştir
+        map_assembler,  # İhtiyaç duyulduğunda aktifleştir
     ])
