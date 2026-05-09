@@ -7,8 +7,8 @@ Panels:
         - /TF1
         - /2D Map1
         - /3D Cloud Map1
-        - /LiDAR Points1
         - /Odometry1
+        - /Planned Path1
       Splitter Ratio: 0.55
     Tree Height: 600
   - Class: rviz_common/Views
@@ -16,20 +16,6 @@ Panels:
 Visualization Manager:
   Class: ""
   Displays:
-    # ── Arka plan grid ──
-    - Class: rviz_default_plugins/Grid
-      Name: Ground Grid
-      Value: true
-      Cell Size: 1
-      Color: 100; 100; 100
-      Line Style:
-        Line Width: 0.02
-        Value: Lines
-      Normal Cell Count: 0
-      Plane: XY
-      Plane Cell Count: 40
-      Reference Frame: map
-
     # ── TF ağacı: map→odom→base_link→lidar/camera ──
     - Class: rviz_default_plugins/TF
       Name: TF
@@ -63,7 +49,7 @@ Visualization Manager:
     # ── 3D Point Cloud Map (RTAB-Map tarafından üretilir) ──
     - Class: rviz_default_plugins/PointCloud2
       Name: 3D Cloud Map
-      Value: false
+      Value: true
       Topic:
         Value: /cloud_map
         Depth: 1
@@ -78,24 +64,6 @@ Visualization Manager:
       Min Color: 0; 0; 255
       Max Color: 255; 0; 0
       Alpha: 0.8
-      Decay Time: 0
-      Selectable: true
-
-    # ── Canlı LiDAR point cloud ──
-    - Class: rviz_default_plugins/PointCloud2
-      Name: LiDAR Points
-      Value: false
-      Topic:
-        Value: /drone/lidar/points
-        Depth: 5
-        Durability Policy: Volatile
-        History Policy: Keep Last
-        Reliability Policy: Best Effort
-      Size (Pixels): 3
-      Style: Points
-      Color Transformer: FlatColor
-      Color: 0; 255; 0
-      Alpha: 1.0
       Decay Time: 0
       Selectable: true
 
@@ -162,21 +130,6 @@ Visualization Manager:
         Y: 0
         Z: 0.05
       Pose Style: None
-
-    # ── Nav2 Global Costmap ──
-    - Class: rviz_default_plugins/Map
-      Name: Global Costmap
-      Value: false
-      Alpha: 0.4
-      Color Scheme: costmap
-      Topic:
-        Value: /global_costmap/costmap
-        Depth: 1
-        Durability Policy: Transient Local
-        History Policy: Keep Last
-        Reliability Policy: Reliable
-      Draw Behind: true
-      Use Timestamp: false
 
     # ── Drone pozisyon marker (base_link eksen) ──
     - Class: rviz_default_plugins/Axes

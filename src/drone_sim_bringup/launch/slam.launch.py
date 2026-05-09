@@ -177,6 +177,7 @@ def generate_launch_description():
     map_assembler_params.update({
         "regenerate_local_grids": True,
         "Grid/Sensor": "0",
+        "Grid/3D": "false",
         "Grid/MaxObstacleHeight": "0.3",
         "Grid/MaxGroundHeight": "0.0",
     })
