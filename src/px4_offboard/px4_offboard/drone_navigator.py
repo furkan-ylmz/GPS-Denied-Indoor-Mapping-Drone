@@ -76,16 +76,20 @@ class State(Enum):
     TAKEOFF = auto()
     HOVER = auto()
     NAVIGATING = auto()
+    SCANNING = auto()
 
 
 class DroneNavigator(Node):
     def __init__(self):
         super().__init__("drone_navigator")
 
+        self.current_yaw = 0.0
+        self.target_yaw = 0.0
+
         # ── Parametreler ──
         self.declare_parameter("takeoff_height", 1.0)
         self.declare_parameter("position_threshold", 0.22)
-        self.declare_parameter("waypoint_spacing", 0.3)
+        self.declare_parameter("waypoint_spacing", 0.8)
         self.declare_parameter("setpoint_count_before_offboard", 20)
         self.declare_parameter("nav_progress_timeout", 6.5)
         self.declare_parameter("nav_progress_min_delta", 0.12)
@@ -165,6 +169,7 @@ class DroneNavigator(Node):
 
     def _pos_cb(self, msg: VehicleLocalPosition):
         self.pos_ned = [msg.x, msg.y, msg.z]
+        self.current_yaw = msg.heading
 
     def _status_cb(self, msg: VehicleStatus):
         old_armed = self.armed
@@ -291,7 +296,7 @@ class DroneNavigator(Node):
     def _convert_path_to_ned(self, path: Path):
         """Map frame path → NED waypoint listesi.
 
-        1. TF ile map → odom (ENU) dönüşümü
+        1. TF ile map → odom (ENU) dönüşümü (1 kere sorgulanır)
         2. ENU → NED: x_ned = y_enu, y_ned = x_enu, z_ned = -z_enu
         3. Z sabit (takeoff yüksekliği)
         4. Yakın waypoint'leri birleştir (downsample)
@@ -299,19 +304,18 @@ class DroneNavigator(Node):
         ned_waypoints = []
         last_wp = None
 
-        # TF mevcut mu?
-        use_tf = False
+        # TF mevcut mu? Sadece 1 kere sorgula!
+        transform = None
         try:
-            self.tf_buffer.lookup_transform(
+            transform = self.tf_buffer.lookup_transform(
                 'odom', 'map', rclpy.time.Time(),
                 timeout=Duration(seconds=0.5))
-            use_tf = True
         except Exception:
             self.get_logger().warn(
                 "TF map->odom bulunamadi, direkt donusum kullaniliyor")
 
         for pose_s in path.poses:
-            x_enu, y_enu = self._pose_to_odom_enu(pose_s, use_tf)
+            x_enu, y_enu = self._fast_pose_to_odom_enu(pose_s, transform)
 
             # ENU → NED
             x_ned = y_enu    # North = ENU_y
@@ -332,15 +336,27 @@ class DroneNavigator(Node):
 
         # Son waypoint'i her zaman ekle
         if path.poses:
-            fx, fy = self._pose_to_odom_enu(path.poses[-1], use_tf)
+            fx, fy = self._fast_pose_to_odom_enu(path.poses[-1], transform)
             final_wp = [fy, fx, -self.takeoff_height]
             if not ned_waypoints or ned_waypoints[-1] != final_wp:
                 ned_waypoints.append(final_wp)
 
         return ned_waypoints
 
+    def _fast_pose_to_odom_enu(self, pose_s: PoseStamped, transform):
+        """PoseStamped (map frame) → odom ENU (x, y) pozisyonu. (Hızlı çeviri)"""
+        if transform is not None:
+            try:
+                import tf2_geometry_msgs
+                odom_pose = tf2_geometry_msgs.do_transform_pose(pose_s.pose, transform)
+                return odom_pose.position.x, odom_pose.position.y
+            except Exception:
+                pass
+        # Fallback: map ≈ odom varsay
+        return pose_s.pose.position.x, pose_s.pose.position.y
+
     def _pose_to_odom_enu(self, pose_s: PoseStamped, use_tf: bool):
-        """PoseStamped (map frame) → odom ENU (x, y) pozisyonu."""
+        """Eski yavaş dönüşüm (geriye dönük uyumluluk için saklanabilir veya kullanılabilir)."""
         if use_tf:
             try:
                 odom_pose = self.tf_buffer.transform(
@@ -420,16 +436,26 @@ class DroneNavigator(Node):
     def _ts(self):
         return int(self.get_clock().now().nanoseconds / 1000)
 
+    def _wrap_pi(self, angle):
+        return (angle + math.pi) % (2 * math.pi) - math.pi
+
     # ════════════════════════════════════════════
     #  Yardımcılar
     # ════════════════════════════════════════════
 
-    def _dist_to_target(self):
-        return math.sqrt(sum(
-            (a - b) ** 2 for a, b in zip(self.pos_ned, self.target_ned)))
+    def _dist_to_target_2d(self):
+        return math.sqrt((self.pos_ned[0] - self.target_ned[0]) ** 2 + (self.pos_ned[1] - self.target_ned[1]) ** 2)
 
-    def _at_target(self):
-        return self._dist_to_target() < self.pos_threshold
+    def _dist_to_target_z(self):
+        return abs(self.pos_ned[2] - self.target_ned[2])
+
+    def _at_target_2d(self):
+        is_final_wp = (self.wp_index >= len(self.waypoints_ned) - 1)
+        current_tolerance = self.pos_threshold if is_final_wp else 0.8
+        return self._dist_to_target_2d() < current_tolerance
+
+    def _at_target_z(self):
+        return self._dist_to_target_z() < self.pos_threshold
 
     def _publish_nav_status(self, status):
         """Navigator durumunu yayınla (NAVIGATING/REACHED/FAILED)."""
@@ -438,7 +464,7 @@ class DroneNavigator(Node):
         self.nav_status_pub.publish(msg)
 
     def _reset_nav_progress_watchdog(self):
-        self.nav_progress_best_dist = self._dist_to_target()
+        self.nav_progress_best_dist = self._dist_to_target_2d()
         self.nav_progress_last_improve_time = self.get_clock().now()
 
     def _clear_nav_progress_watchdog(self):
@@ -447,7 +473,7 @@ class DroneNavigator(Node):
 
     def _nav_progress_stalled(self):
         now = self.get_clock().now()
-        dist = self._dist_to_target()
+        dist = self._dist_to_target_2d()
 
         if (
             self.nav_progress_best_dist is None
@@ -472,7 +498,12 @@ class DroneNavigator(Node):
     def _control_loop(self):
         # Her döngüde offboard mode + setpoint gönder
         self._publish_offboard_mode()
-        self._publish_setpoint(*self.target_ned)
+        
+        loop_yaw = float("nan")
+        if self.state == State.SCANNING:
+            loop_yaw = self.target_yaw
+
+        self._publish_setpoint(*self.target_ned, yaw=loop_yaw)
 
         # ── INIT: Yeterli setpoint gönder ──
         if self.state == State.INIT:
@@ -523,11 +554,20 @@ class DroneNavigator(Node):
 
         # ── TAKEOFF: Hedef yüksekliğe ulaşana kadar bekle ──
         elif self.state == State.TAKEOFF:
-            if self._at_target():
+            if self._at_target_z():
                 self.get_logger().info(
-                    f"Takeoff tamam | z={-self.pos_ned[2]:.2f}m -> HOVER")
+                    f"Takeoff tamam | z={-self.pos_ned[2]:.2f}m -> SCANNING")
+                self.target_yaw = self._wrap_pi(self.current_yaw + math.pi)
+                self.state = State.SCANNING
+
+        # ── SCANNING: Etrafı haritalamak için 180 derece olduğu yerde dön ──
+        elif self.state == State.SCANNING:
+            dyaw = self._wrap_pi(self.target_yaw - self.current_yaw)
+            if abs(dyaw) < 0.15:  # ~8.5 derece tolerans
+                self.get_logger().info("180 derece dönüs tamamlandi -> HOVER")
                 self.state = State.HOVER
-                # Kuyrukta hedef varsa şimdi planla
+                self._publish_nav_status("REACHED")
+                # Kuyrukta daha onceden gelmis bir hedef varsa planla
                 if self.goal_pose_map is not None:
                     self._plan_path(self.goal_pose_map)
 
@@ -537,7 +577,7 @@ class DroneNavigator(Node):
 
         # ── NAVIGATING: Waypoint'leri sırayla takip et ──
         elif self.state == State.NAVIGATING:
-            if self._at_target():
+            if self._at_target_2d():
                 self.wp_index += 1
                 if self.wp_index < len(self.waypoints_ned):
                     self.target_ned = self.waypoints_ned[self.wp_index]
@@ -548,11 +588,11 @@ class DroneNavigator(Node):
                         f"kalan: {remaining} | "
                         f"NED ({self.target_ned[0]:.1f}, {self.target_ned[1]:.1f})")
                 else:
-                    self.get_logger().info("Hedefe ulasildi! -> HOVER")
+                    self.get_logger().info("Hedefe ulasildi! -> SCANNING")
                     self.goal_pose_map = None
-                    self.state = State.HOVER
+                    self.target_yaw = self._wrap_pi(self.current_yaw + math.pi)
+                    self.state = State.SCANNING
                     self._clear_nav_progress_watchdog()
-                    self._publish_nav_status("REACHED")
             elif self._nav_progress_stalled():
                 self.get_logger().warn(
                     "Navigasyon ilerlemiyor -> FAILED, HOVER'a donuluyor"

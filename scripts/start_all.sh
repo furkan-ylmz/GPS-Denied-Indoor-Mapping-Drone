@@ -242,13 +242,13 @@ if [ "$MODE" = "explore" ]; then
     echo -e "${YELLOW}  Ctrl+C ile iniş yapılır.${NC}"
     echo ""
     # Navigator arka planda çalışır
-    ros2 run px4_offboard drone_navigator &
+    ros2 run px4_offboard drone_navigator --ros-args -p use_sim_time:=true &
     NAV_PID=$!
     echo "$NAV_PID" > /tmp/drone_sim_navigator.pid
     sleep 2
     ok "Navigator çalışıyor (PID: $NAV_PID)"
     # Frontier Explorer foreground'da
-    ros2 run px4_offboard frontier_explorer
+    ros2 run px4_offboard frontier_explorer --ros-args -p use_sim_time:=true
 
 elif [ "$MODE" = "teleop" ]; then
     info "7/7 Drone Teleop başlatılıyor (klavye kontrolü)..."
@@ -256,7 +256,7 @@ elif [ "$MODE" = "teleop" ]; then
     echo ""
     echo -e "${YELLOW}  Teleop başlamadan önce 't' ile arm+takeoff yapın!${NC}"
     echo ""
-    ros2 run px4_offboard drone_teleop
+    ros2 run px4_offboard drone_teleop --ros-args -p use_sim_time:=true
 
 else
     info "7/7 Offboard Control başlatılıyor (otomatik hover)..."
@@ -265,5 +265,5 @@ else
     echo -e "${YELLOW}  Drone otomatik olarak 1.0m'ye yükselecek ve hover yapacak.${NC}"
     echo -e "${YELLOW}  Ctrl+C ile iniş yapılır.${NC}"
     echo ""
-    ros2 run px4_offboard offboard_control
+    ros2 run px4_offboard offboard_control --ros-args -p use_sim_time:=true
 fi
