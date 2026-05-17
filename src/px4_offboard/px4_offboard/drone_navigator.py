@@ -89,10 +89,12 @@ class DroneNavigator(Node):
         # ── Parametreler ──
         self.declare_parameter("takeoff_height", 1.0)
         self.declare_parameter("position_threshold", 0.22)
-        self.declare_parameter("waypoint_spacing", 0.8)
+        self.declare_parameter("waypoint_spacing", 0.25)   # 0.5 → 0.25: daha sıkı path takibi
         self.declare_parameter("setpoint_count_before_offboard", 20)
-        self.declare_parameter("nav_progress_timeout", 6.5)
+        self.declare_parameter("nav_progress_timeout", 16.5)
         self.declare_parameter("nav_progress_min_delta", 0.12)
+        self.declare_parameter("scan_yaw_rate", 0.4)   # rad/s — scan dönüş hızı
+        self.declare_parameter("nav_yaw_rate", 1.2)     # rad/s — navigasyon yaw dönüş hızı
 
         self.takeoff_height = self.get_parameter("takeoff_height").value
         self.pos_threshold = self.get_parameter("position_threshold").value
@@ -103,6 +105,10 @@ class DroneNavigator(Node):
             self.get_parameter("nav_progress_timeout").value)
         self.nav_progress_min_delta = float(
             self.get_parameter("nav_progress_min_delta").value)
+        self.scan_yaw_rate = float(
+            self.get_parameter("scan_yaw_rate").value)
+        self.nav_yaw_rate = float(
+            self.get_parameter("nav_yaw_rate").value)
 
         # ── PX4 Publishers ──
         self.offboard_pub = self.create_publisher(
@@ -155,6 +161,9 @@ class DroneNavigator(Node):
         self.planning_in_progress = False
         self.nav_progress_best_dist = None
         self.nav_progress_last_improve_time = None
+        self.initial_scan_done = False  # İlk takeoff scan'i yapıldı mı?
+        self.scan_incremental_yaw = 0.0  # Kademeli scan dönüşünde anlık hedef yaw
+        self.smoothed_nav_yaw = float("nan")  # Navigasyon sırasında yumuşatılmış yaw
 
         # ── 20 Hz kontrol döngüsü ──
         self.timer = self.create_timer(0.05, self._control_loop)
@@ -451,7 +460,7 @@ class DroneNavigator(Node):
 
     def _at_target_2d(self):
         is_final_wp = (self.wp_index >= len(self.waypoints_ned) - 1)
-        current_tolerance = self.pos_threshold if is_final_wp else 0.8
+        current_tolerance = self.pos_threshold if is_final_wp else 0.2
         return self._dist_to_target_2d() < current_tolerance
 
     def _at_target_z(self):
@@ -498,10 +507,34 @@ class DroneNavigator(Node):
     def _control_loop(self):
         # Her döngüde offboard mode + setpoint gönder
         self._publish_offboard_mode()
-        
+
+        # ── Durum bazlı yaw hesaplama ──
         loop_yaw = float("nan")
         if self.state == State.SCANNING:
-            loop_yaw = self.target_yaw
+            loop_yaw = self.scan_incremental_yaw
+        elif self.state == State.NAVIGATING:
+            # Drone'un yüzünü hedefe çevir — kademeli (savrulmayı önler)
+            dx = self.target_ned[0] - self.pos_ned[0]  # North farkı
+            dy = self.target_ned[1] - self.pos_ned[1]  # East farkı
+            if math.hypot(dx, dy) > 0.3:
+                desired_yaw = math.atan2(dy, dx)  # NED'de hedef yaw
+
+                # İlk seferde mevcut yaw'dan başla
+                if math.isnan(self.smoothed_nav_yaw):
+                    self.smoothed_nav_yaw = self.current_yaw
+
+                # Kademeli interpolasyon: nav_yaw_rate rad/s, 20Hz tick
+                yaw_diff = self._wrap_pi(desired_yaw - self.smoothed_nav_yaw)
+                max_step = self.nav_yaw_rate * 0.05  # 0.05s = 1 tick
+
+                if abs(yaw_diff) <= max_step:
+                    self.smoothed_nav_yaw = desired_yaw
+                else:
+                    step = max_step if yaw_diff > 0 else -max_step
+                    self.smoothed_nav_yaw = self._wrap_pi(
+                        self.smoothed_nav_yaw + step)
+
+                loop_yaw = self.smoothed_nav_yaw
 
         self._publish_setpoint(*self.target_ned, yaw=loop_yaw)
 
@@ -555,27 +588,45 @@ class DroneNavigator(Node):
         # ── TAKEOFF: Hedef yüksekliğe ulaşana kadar bekle ──
         elif self.state == State.TAKEOFF:
             if self._at_target_z():
-                self.get_logger().info(
-                    f"Takeoff tamam | z={-self.pos_ned[2]:.2f}m -> SCANNING")
-                self.target_yaw = self._wrap_pi(self.current_yaw + math.pi)
-                self.state = State.SCANNING
+                if not self.initial_scan_done:
+                    self.get_logger().info(
+                        f"Takeoff tamam | z={-self.pos_ned[2]:.2f}m -> ilk SCANNING")
+                    self.target_yaw = self._wrap_pi(self.current_yaw + math.pi)
+                    self.scan_incremental_yaw = self.current_yaw
+                    self.state = State.SCANNING
+                else:
+                    self.get_logger().info(
+                        f"Takeoff tamam | z={-self.pos_ned[2]:.2f}m -> HOVER")
+                    self.state = State.HOVER
 
-        # ── SCANNING: Etrafı haritalamak için 180 derece olduğu yerde dön ──
+        # ── SCANNING: Etrafı haritalamak için kademeli yaw dönüşü ──
+        # Yaw dönüşü yavaş yapılır (harita kaymasını önlemek için)
         elif self.state == State.SCANNING:
             dyaw = self._wrap_pi(self.target_yaw - self.current_yaw)
             if abs(dyaw) < 0.15:  # ~8.5 derece tolerans
-                self.get_logger().info("180 derece dönüs tamamlandi -> HOVER")
+                self.initial_scan_done = True
+                self.get_logger().info("Kademeli dönüs tamamlandi -> HOVER")
                 self.state = State.HOVER
                 self._publish_nav_status("REACHED")
                 # Kuyrukta daha onceden gelmis bir hedef varsa planla
                 if self.goal_pose_map is not None:
                     self._plan_path(self.goal_pose_map)
+            else:
+                # Kademeli yaw artışı: scan_yaw_rate rad/s, 20Hz tick
+                yaw_step = self.scan_yaw_rate * 0.05  # 0.05s = 1 tick
+                if dyaw > 0:
+                    self.scan_incremental_yaw = self._wrap_pi(
+                        self.scan_incremental_yaw + yaw_step)
+                else:
+                    self.scan_incremental_yaw = self._wrap_pi(
+                        self.scan_incremental_yaw - yaw_step)
 
         # ── HOVER: Yerinde dur, hedef bekle ──
         elif self.state == State.HOVER:
             pass  # /goal_pose callback'i ile navigasyona geçilir
 
         # ── NAVIGATING: Waypoint'leri sırayla takip et ──
+        # Drone yüzünü hedefe döndürerek ilerler (yaw üstte hesaplandı)
         elif self.state == State.NAVIGATING:
             if self._at_target_2d():
                 self.wp_index += 1
@@ -588,11 +639,15 @@ class DroneNavigator(Node):
                         f"kalan: {remaining} | "
                         f"NED ({self.target_ned[0]:.1f}, {self.target_ned[1]:.1f})")
                 else:
-                    self.get_logger().info("Hedefe ulasildi! -> SCANNING")
+                    # Hedefe ulaşıldı — artık SCANNING yerine direkt HOVER
+                    # (ilk takeoff scan'i zaten yapıldı, gezme sırasında
+                    #  LiDAR sürekli harita oluşturuyor)
+                    self.get_logger().info("Hedefe ulasildi! -> HOVER")
                     self.goal_pose_map = None
-                    self.target_yaw = self._wrap_pi(self.current_yaw + math.pi)
-                    self.state = State.SCANNING
+                    self.state = State.HOVER
                     self._clear_nav_progress_watchdog()
+                    self.smoothed_nav_yaw = float("nan")
+                    self._publish_nav_status("REACHED")
             elif self._nav_progress_stalled():
                 self.get_logger().warn(
                     "Navigasyon ilerlemiyor -> FAILED, HOVER'a donuluyor"
@@ -607,6 +662,7 @@ class DroneNavigator(Node):
                 ]
                 self.state = State.HOVER
                 self._clear_nav_progress_watchdog()
+                self.smoothed_nav_yaw = float("nan")
                 self._publish_nav_status("FAILED")
 
     def do_land(self):

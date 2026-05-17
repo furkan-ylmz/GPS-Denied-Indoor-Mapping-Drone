@@ -38,25 +38,26 @@ class FrontierExplorer(Node):
         # Core behavior
         self.declare_parameter("min_frontier_size", 8)
         self.declare_parameter("goal_tolerance", 0.8)
-        self.declare_parameter("update_interval", 2.0)
+        self.declare_parameter("update_interval", 0.5)
         self.declare_parameter("robot_frame", "base_link")
         self.declare_parameter("costmap_topic", "/map_clean")
         self.declare_parameter("goal_timeout", 15.0)
-        self.declare_parameter("approach_offset", 1.9)
-        self.declare_parameter("min_goal_distance", 1.1)
+        self.declare_parameter("approach_offset", 3.5)       # 2.5 → 3.5: frontier'dan daha uzak dur
+        self.declare_parameter("min_goal_distance", 1.5)     # 1.1 → 1.5: çok yakın hedefleri reddet
 
-        # Approach safety filter
-        self.declare_parameter("approach_safety_radius_cells", 1)
+        # Approach safety filter — duvara yakın hedefleri engelle
+        self.declare_parameter("approach_safety_radius_cells", 5)  # 1 → 5: 0.5m güvenlik çapı
         self.declare_parameter("approach_occupied_threshold", 65)
-        self.declare_parameter("approach_min_free_ratio", 0.6)
+        self.declare_parameter("approach_min_free_ratio", 0.70)    # 0.6 → 0.70: daha fazla boş alan şart
 
         # Utility score tuning
         self.declare_parameter("utility_size_weight", 1.0)
         self.declare_parameter("utility_distance_weight", 1.2)
+        self.declare_parameter("utility_direction_weight", 0.8)  # Yön bonusu
 
         # Anti-repeat / stuck handling
         self.declare_parameter("blacklist_radius", 1.0)
-        self.declare_parameter("blacklist_ttl_sec", 180.0)
+        self.declare_parameter("blacklist_ttl_sec", 30.0)
         self.declare_parameter("recent_goal_radius", 1.2)
         self.declare_parameter("recent_goal_memory", 10)
         self.declare_parameter("max_no_frontier_cycles", 8)
@@ -84,6 +85,9 @@ class FrontierExplorer(Node):
         )
         self.utility_distance_weight = float(
             self.get_parameter("utility_distance_weight").value
+        )
+        self.utility_direction_weight = float(
+            self.get_parameter("utility_direction_weight").value
         )
 
         self.blacklist_radius = float(self.get_parameter("blacklist_radius").value)
@@ -138,8 +142,9 @@ class FrontierExplorer(Node):
         self.get_logger().info(
             "Utility WFD explorer started | "
             f"map={self.costmap_topic} | "
-            f"weights(size/dist)=({self.utility_size_weight:.2f}/"
-            f"{self.utility_distance_weight:.2f})"
+            f"weights(size/dist/dir)=({self.utility_size_weight:.2f}/"
+            f"{self.utility_distance_weight:.2f}/"
+            f"{self.utility_direction_weight:.2f})"
         )
 
     def _now_sec(self):
@@ -187,6 +192,7 @@ class FrontierExplorer(Node):
             self.no_frontier_count = 0
 
     def _get_robot_position(self):
+        """Robot pozisyonunu ve yaw açısını döndürür: (x, y, yaw) veya None."""
         try:
             tf = self.tf_buffer.lookup_transform(
                 "map",
@@ -194,7 +200,14 @@ class FrontierExplorer(Node):
                 rclpy.time.Time(),
                 timeout=Duration(seconds=0.3),
             )
-            return (tf.transform.translation.x, tf.transform.translation.y)
+            x = tf.transform.translation.x
+            y = tf.transform.translation.y
+            # Quaternion -> yaw
+            q = tf.transform.rotation
+            siny_cosp = 2.0 * (q.w * q.z + q.x * q.y)
+            cosy_cosp = 1.0 - 2.0 * (q.y * q.y + q.z * q.z)
+            yaw = math.atan2(siny_cosp, cosy_cosp)
+            return (x, y, yaw)
         except Exception:
             return None
 
@@ -237,6 +250,11 @@ class FrontierExplorer(Node):
         return False
 
     def _is_approach_safe(self, wx, wy):
+        """Hedef noktasının güvenli olup olmadığını kontrol et.
+        
+        Engel yokluğu, yeterli boş alan ve düşük unknown oranı gerektirir.
+        Keşfedilmemiş alanların ortasına hedef göndermeyi engeller.
+        """
         if self.map_data is None or self.map_info is None:
             return False
 
@@ -262,8 +280,17 @@ class FrontierExplorer(Node):
         if occupied_count > 0:
             return False
 
-        free_ratio = float(np.count_nonzero(patch == FREE)) / float(patch.size)
-        return free_ratio >= self.approach_min_free_ratio
+        total = float(patch.size)
+        free_ratio = float(np.count_nonzero(patch == FREE)) / total
+        if free_ratio < self.approach_min_free_ratio:
+            return False
+
+        # Keşfedilmemiş alan oranı kontrolü — %40'tan fazla unknown varsa tehlikeli
+        unknown_ratio = float(np.count_nonzero(patch == UNKNOWN)) / total
+        if unknown_ratio > 0.40:
+            return False
+
+        return True
 
     def _find_frontiers(self):
         if self.map_data is None or self.map_info is None:
@@ -340,7 +367,7 @@ class FrontierExplorer(Node):
         return gx, gy
 
     def _select_goal(self, frontiers, robot_pos):
-        rx, ry = robot_pos
+        rx, ry, robot_yaw = robot_pos
         if not frontiers:
             return None
 
@@ -351,19 +378,33 @@ class FrontierExplorer(Node):
             dist = math.hypot(fx - rx, fy - ry)
             if dist < self.min_goal_distance:
                 continue
-            if self._is_blacklisted(fx, fy):
+
+            ax, ay = self._compute_approach_goal(fx, fy, rx, ry)
+            
+            if self._is_blacklisted(ax, ay) or self._is_blacklisted(fx, fy):
                 continue
-            if self._is_recent_goal(fx, fy):
+            if self._is_recent_goal(ax, ay) or self._is_recent_goal(fx, fy):
                 continue
 
             size_score = size / max_size if max_size > 0 else 0.0
             distance_score = 1.0 / (1.0 + dist)
+
+            # Yön bonusu: drone'un baktığı yöne yakın frontier'lara puan ver
+            # Böylece gereksiz 180° dönüşler azalır
+            angle_to_frontier = math.atan2(fy - ry, fx - rx)
+            angle_diff = abs(math.atan2(
+                math.sin(angle_to_frontier - robot_yaw),
+                math.cos(angle_to_frontier - robot_yaw)
+            ))
+            # 0 derece fark = 1.0 puan, 180 derece fark = 0.0 puan
+            direction_score = 1.0 - (angle_diff / math.pi)
+
             utility = (
                 self.utility_size_weight * size_score
                 + self.utility_distance_weight * distance_score
+                + self.utility_direction_weight * direction_score
             )
 
-            ax, ay = self._compute_approach_goal(fx, fy, rx, ry)
             if not self._is_approach_safe(ax, ay):
                 continue
             candidates.append((utility, dist, fx, fy, size, ax, ay))
@@ -406,7 +447,7 @@ class FrontierExplorer(Node):
         # Keep current goal alive until reached or timeout.
         if self.current_goal is not None and self.goal_sent_time is not None:
             gx, gy = self.current_goal
-            rx, ry = robot_pos
+            rx, ry, _ = robot_pos
             dist = math.hypot(gx - rx, gy - ry)
 
             if dist < self.goal_tolerance:

@@ -69,22 +69,24 @@ def generate_launch_description():
         "queue_size": 10,
         "Reg/Strategy": "1",
         "Reg/Force3DoF": "false",
-        "ICP/VoxelSize": "0.1",
-        "ICP/MaxCorrespondenceDistance": "1.5",
+        # ── ICP parametreleri (harita kaymasını azaltmak için optimize edildi) ──
+        "ICP/VoxelSize": "0.08",                   # 0.1 → 0.08: daha hassas scan eşleşme
+        "ICP/MaxCorrespondenceDistance": "1.0",      # 1.5 → 1.0: daha sıkı eşleşme, yanlış match azalır
         "ICP/PointToPlane": "true",
         "ICP/PointToPlaneK": "20",
-        "ICP/Iterations": "30",
+        "ICP/Iterations": "50",                     # 30 → 50: daha fazla iterasyon, daha iyi yakınsama
         "ICP/Epsilon": "0.001",
         "ICP/MaxTranslation": "2.0",
         "RGBD/ProximityBySpace": "true",
         "RGBD/ProximityMaxGraphDepth": "0",
         "RGBD/ProximityPathMaxNeighbors": "10",
-        "RGBD/AngularUpdate": "0.05",
-        "RGBD/LinearUpdate": "0.05",
+        # ── Daha sık güncelleme (küçük hareketlerde bile SLAM çalışsın) ──
+        "RGBD/AngularUpdate": "0.02",               # 0.05 → 0.02: daha sık angular update
+        "RGBD/LinearUpdate": "0.02",                 # 0.05 → 0.02: daha sık linear update
         "RGBD/OptimizeFromGraphEnd": "false",
         "RGBD/NeighborLinkRefining": "true",
         "Mem/NotLinkedNodesKept": "false",
-        "Mem/STMSize": "30",
+        "Mem/STMSize": "50",                        # 30 → 50: daha fazla node hafızada
         "Grid/FromDepth": "false",
         "Grid/RayTracing": "true",
         "Grid/RangeMax": "25.0",

@@ -15,7 +15,7 @@ planner_server:
       plugin: "nav2_navfn_planner::NavfnPlanner"
       tolerance: 0.65
       use_astar: true
-      allow_unknown: true
+      allow_unknown: false          # true → false: keşfedilmemiş alana path çizme
 
 global_costmap:
   global_costmap:
@@ -25,7 +25,7 @@ global_costmap:
       global_frame: map
       robot_base_frame: base_link
       use_sim_time: true
-      robot_radius: 0.35
+      robot_radius: 0.55            # 0.50 → 0.55: daha geniş güvenlik çapı
       resolution: 0.1
       track_unknown_space: true
       unknown_cost_value: 255
@@ -39,6 +39,6 @@ global_costmap:
         map_topic: /map_clean
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        cost_scaling_factor: 3.0
-        inflation_radius: 0.68
-        inflate_unknown: false
+        cost_scaling_factor: 2.5     # 3.0 → 2.5: maliyet daha yavaş düşer, duvardan uzak tutar
+        inflation_radius: 1.0        # 0.68 → 1.0: daha geniş şişirme yarıçapı
+        inflate_unknown: true        # false → true: bilinmeyen alanları da tehlikeli say
