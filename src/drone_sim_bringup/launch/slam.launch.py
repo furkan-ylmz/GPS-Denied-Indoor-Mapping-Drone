@@ -131,24 +131,6 @@ def generate_launch_description():
     )
 
     # ══════════════════════════════════════════════
-    #  Map Cleaner (/map -> /map_clean)
-    # ══════════════════════════════════════════════
-    map_cleaner = Node(
-        package="px4_offboard",
-        executable="map_cleaner",
-        name="map_cleaner",
-        output="screen",
-        parameters=[{
-            "use_sim_time": use_sim_time,
-            "input_topic": "/map",
-            "output_topic": "/map_clean",
-            "min_obstacle_cluster_size": 10,
-            "enable_unknown_hole_fill": True,
-            "unknown_free_neighbor_threshold": 6,
-        }],
-    )
-
-    # ══════════════════════════════════════════════
     #  RTAB-Map Visualisation (point cloud map)
     # ══════════════════════════════════════════════
     rtabmap_viz = Node(
@@ -172,31 +154,6 @@ def generate_launch_description():
         condition=None,  # Her zaman çalışsın
     )
 
-    # ══════════════════════════════════════════════
-    #  Map → OccupancyGrid 2D (Nav2 uyumlu)
-    # ══════════════════════════════════════════════
-    map_assembler_params = rtabmap_parameters.copy()
-    map_assembler_params.update({
-        "regenerate_local_grids": True,
-        "Grid/Sensor": "0",
-        "Grid/3D": "false",
-        "Grid/MaxObstacleHeight": "0.3",
-        "Grid/MaxGroundHeight": "0.0",
-    })
-
-    map_assembler = Node(
-        package="rtabmap_util",
-        executable="map_assembler",
-        name="map_assembler",
-        output="screen",
-        parameters=[map_assembler_params],
-        remappings=[
-            ("map", "/map"),
-            ("mapData", "/mapData"),
-            ("cloud_map", "/map_assembler/cloud_map"),
-        ],
-    )
-
     return LaunchDescription([
         resume_arg,
         use_sim_time_arg,
@@ -204,7 +161,7 @@ def generate_launch_description():
         odom_node,
         rtabmap_slam_new,
         rtabmap_slam_resume,
-        map_cleaner,
         # rtabmap_viz,  # WSL'de GUI yok, rviz2 kullan
-        map_assembler,  # İhtiyaç duyulduğunda aktifleştir
+        # map_assembler ve map_cleaner kaldırıldı — 3D nokta bulutu kullanılıyor
     ])
+

@@ -26,7 +26,6 @@ setup(
             "odom_publisher = px4_offboard.odom_publisher:main",
             "drone_navigator = px4_offboard.drone_navigator:main",
             "frontier_explorer = px4_offboard.frontier_explorer:main",
-            "map_cleaner = px4_offboard.map_cleaner:main",
         ],
     },
 )

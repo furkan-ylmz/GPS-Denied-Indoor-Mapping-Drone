@@ -27,17 +27,21 @@ Kullanım:
 """
 
 import math
+import struct
+import heapq
 from enum import Enum, auto
+
+import numpy as np
 
 import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
-from rclpy.action import ActionClient
 from rclpy.duration import Duration
 from rclpy.executors import ExternalShutdownException
 
 from geometry_msgs.msg import PoseStamped
 from nav_msgs.msg import Path
+from sensor_msgs.msg import PointCloud2
 from std_msgs.msg import String
 
 from px4_msgs.msg import (
@@ -50,13 +54,10 @@ from px4_msgs.msg import (
 
 import tf2_ros
 
-# tf2_geometry_msgs'i import etmek PoseStamped için TF2 dönüşüm desteği sağlar
 try:
     import tf2_geometry_msgs  # noqa: F401
 except ImportError:
     pass
-
-from nav2_msgs.action import ComputePathToPose
 
 
 # ── QoS: PX4 uXRCE-DDS best-effort stream ile uyumlu ──
@@ -88,8 +89,8 @@ class DroneNavigator(Node):
 
         # ── Parametreler ──
         self.declare_parameter("takeoff_height", 1.0)
-        self.declare_parameter("position_threshold", 0.22)
-        self.declare_parameter("waypoint_spacing", 0.25)   # 0.5 → 0.25: daha sıkı path takibi
+        self.declare_parameter("position_threshold", 0.15)
+        self.declare_parameter("waypoint_spacing", 0.4)
         self.declare_parameter("setpoint_count_before_offboard", 20)
         self.declare_parameter("nav_progress_timeout", 16.5)
         self.declare_parameter("nav_progress_min_delta", 0.12)
@@ -141,10 +142,16 @@ class DroneNavigator(Node):
         self.tf_buffer = tf2_ros.Buffer()
         self.tf_listener = tf2_ros.TransformListener(self.tf_buffer, self)
 
-        # ── Nav2 Planner Action Client ──
-        self.planner_client = ActionClient(
-            self, ComputePathToPose, "compute_path_to_pose")
-        self.planner_available = False
+        # ── 3D Point Cloud subscriber (path planning için) ──
+        lidar_qos = QoSProfile(
+            reliability=ReliabilityPolicy.BEST_EFFORT,
+            durability=DurabilityPolicy.VOLATILE,
+            history=HistoryPolicy.KEEP_LAST, depth=1)
+        self.create_subscription(
+            PointCloud2, "/drone/lidar/points", self._lidar_cb, lidar_qos)
+        self.voxel_size = 0.2  # 0.2m (frontier_explorer ile aynı)
+        self.voxels = {}  # (ix,iy,iz) -> True (occupied)
+        self.last_scan_time = 0.0
 
         # ── Durum ──
         self.state = State.INIT
@@ -206,84 +213,199 @@ class DroneNavigator(Node):
         self._plan_path(msg)
 
     # ════════════════════════════════════════════
-    #  Path Planning (Nav2)
+    #  Point Cloud & Voxel
+    # ════════════════════════════════════════════
+
+    def _now_sec(self):
+        return self.get_clock().now().nanoseconds / 1e9
+
+    def _lidar_cb(self, msg: PointCloud2):
+        """Canlı LiDAR verisinden kalıcı 3D engel haritası oluştur."""
+        now = self._now_sec()
+        if now - self.last_scan_time < 0.2:  # 5Hz'de güncelle (performans için)
+            return
+        self.last_scan_time = now
+
+        point_step = msg.point_step
+        data = bytes(msg.data)
+        n = msg.width * msg.height
+        offsets = {}
+        for f in msg.fields:
+            if f.name in ('x', 'y', 'z'):
+                offsets[f.name] = f.offset
+        if len(offsets) < 3:
+            return
+        
+        # 1. Parse point cloud (lidar_link frame)
+        pts_lidar = np.zeros((n, 3), dtype=np.float32)
+        for i in range(n):
+            base = i * point_step
+            if base + offsets['z'] + 4 > len(data):
+                break
+            pts_lidar[i, 0] = struct.unpack_from('f', data, base + offsets['x'])[0]
+            pts_lidar[i, 1] = struct.unpack_from('f', data, base + offsets['y'])[0]
+            pts_lidar[i, 2] = struct.unpack_from('f', data, base + offsets['z'])[0]
+
+        # 2. Transform lidar_link -> map
+        try:
+            tf = self.tf_buffer.lookup_transform(
+                "map", msg.header.frame_id, rclpy.time.Time(),
+                timeout=Duration(seconds=0.1))
+            
+            tx = tf.transform.translation.x
+            ty = tf.transform.translation.y
+            tz = tf.transform.translation.z
+            q = tf.transform.rotation
+            qx, qy, qz, qw = q.x, q.y, q.z, q.w
+            
+            R = np.array([
+                [1 - 2*qy**2 - 2*qz**2,     2*qx*qy - 2*qz*qw,     2*qx*qz + 2*qy*qw],
+                [    2*qx*qy + 2*qz*qw, 1 - 2*qx**2 - 2*qz**2,     2*qy*qz - 2*qx*qw],
+                [    2*qx*qz - 2*qy*qw,     2*qy*qz + 2*qx*qw, 1 - 2*qx**2 - 2*qy**2]
+            ])
+            
+            pts_map = np.dot(pts_lidar, R.T) + np.array([tx, ty, tz])
+            
+            # 3. Engelleri kalıcı voxel haritasına ekle
+            vs = self.voxel_size
+            for i in range(0, len(pts_map), 4):  # Downsample to save CPU
+                px, py, pz = pts_map[i]
+                if np.isnan(px):
+                    continue
+                key = (int(math.floor(px/vs)), int(math.floor(py/vs)), int(math.floor(pz/vs)))
+                self.voxels[key] = True
+
+            # 4. Sürekli Engel Kontrolü (Continuous Path Checking)
+            self._check_path_validity()
+
+        except Exception as e:
+            pass
+
+    def _check_path_validity(self):
+        """Eğer drone ilerlerken yolun üzerine yeni bir engel çıkarsa, anında dur ve hedefi iptal et."""
+        if self.state != State.NAVIGATING or not self.waypoints_ned:
+            return
+        
+        # Sadece önümüzdeki birkaç waypoint'i (yakın gelecek) kontrol et
+        vs = self.voxel_size
+        check_limit = min(self.wp_index + 4, len(self.waypoints_ned))
+        for i in range(self.wp_index, check_limit):
+            wp = self.waypoints_ned[i]
+            x_enu, y_enu, z_enu = wp[1], wp[0], -wp[2]
+            ix, iy, iz = int(math.floor(x_enu/vs)), int(math.floor(y_enu/vs)), int(math.floor(z_enu/vs))
+            if not self._is_voxel_free(ix, iy, iz):
+                self.get_logger().warn("Yol ustunde anlik engel tespit edildi! Yeniden planlanacak.")
+                self.state = State.HOVER
+                self._publish_nav_status("REPLAN")
+                return
+
+    def _is_voxel_free(self, ix, iy, iz):
+        """Voxel ve komşuları engel içermiyor mu kontrol et. (Silindirik Padding)"""
+        padding_z = 1   # 1 voxel * 0.2 = 0.2m (Toplam Yükseklik 40cm)
+        
+        for dx in range(-2, 3):
+            for dy in range(-2, 3):
+                # Euclidean distance check (40cm radius)
+                dist_xy = math.sqrt(dx*dx + dy*dy) * self.voxel_size
+                if dist_xy > 0.42:  # 0.4m yarıçap + ufak tolerans
+                    continue
+                for dz in range(-padding_z, padding_z + 1):
+                    if (ix+dx, iy+dy, iz+dz) in self.voxels:
+                        return False
+        return True
+
+    def _get_nearest_free_voxel(self, vx, vy, vz):
+        """Voxel doluysa en yakın boş voxeli bul (A* için)."""
+        if self._is_voxel_free(vx, vy, vz):
+            return (vx, vy, vz)
+        for r in range(1, 6):  # 5 voxel yarıçapına kadar ara (1.0m)
+            for dx in range(-r, r + 1):
+                for dy in range(-r, r + 1):
+                    for dz in range(-1, 2):
+                        if self._is_voxel_free(vx + dx, vy + dy, vz + dz):
+                            return (vx + dx, vy + dy, vz + dz)
+        return None
+
+    # ════════════════════════════════════════════
+    #  3D Path Planning (A*)
     # ════════════════════════════════════════════
 
     def _plan_path(self, goal_pose: PoseStamped):
-        """Nav2 planner'dan path iste, yoksa direkt git."""
+        """3D A* ile engelden kaçınan path hesapla."""
         if self.planning_in_progress:
             self.get_logger().info("Onceki plan iptal, yeni plan isteniyor...")
 
-        # Nav2 planner kontrolü
-        if not self.planner_available:
-            self.planner_available = self.planner_client.wait_for_server(
-                timeout_sec=1.0)
-
-        if self.planner_available:
-            self.get_logger().info("Nav2 planner'dan path isteniyor...")
-            self.planning_in_progress = True
-
-            goal_msg = ComputePathToPose.Goal()
-            goal_msg.goal = goal_pose
-            goal_msg.use_start = False  # Robot'un mevcut konumunu kullan
-
-            future = self.planner_client.send_goal_async(goal_msg)
-            future.add_done_callback(self._on_plan_accepted)
-        else:
-            self.get_logger().warn(
-                "Nav2 planner bulunamadi -> direkt hedefe gidiliyor")
-            self._set_direct_goal(goal_pose)
-
-    def _on_plan_accepted(self, future):
-        """Planner goal kabul/red cevabı."""
-        goal_handle = future.result()
-        if not goal_handle.accepted:
-            self.get_logger().warn(
-                "Path istegi reddedildi — HOVER'da bekleniyor")
+        if not self.voxels:
+            self.get_logger().warn("Voxel haritasi bos -> HOVER'da bekleniyor")
             self.planning_in_progress = False
             self._publish_nav_status("FAILED")
             return
-        result_future = goal_handle.get_result_async()
-        result_future.add_done_callback(self._on_plan_result)
 
-    def _on_plan_result(self, future):
-        """Planner sonucu: path veya hata."""
-        self.planning_in_progress = False
-        result = future.result().result
-        path = result.path
+        # Robot pozisyonu (ENU): NED->ENU
+        rx_enu = self.pos_ned[1]
+        ry_enu = self.pos_ned[0]
+        rz_enu = -self.pos_ned[2]
 
-        if len(path.poses) < 2:
-            # Tanılama: neden path bulunamadı?
-            gp = self.goal_pose_map
-            goal_str = ""
-            if gp is not None:
-                goal_str = (f" | hedef: ({gp.pose.position.x:.1f}, "
-                            f"{gp.pose.position.y:.1f})")
-            robot_enu_x = self.pos_ned[1]  # NED→ENU
-            robot_enu_y = self.pos_ned[0]
-            self.get_logger().warn(
-                f"Path bulunamadi! robot: ({robot_enu_x:.1f}, "
-                f"{robot_enu_y:.1f}){goal_str} | "
-                f"poses: {len(path.poses)}")
+        gx = goal_pose.pose.position.x
+        gy = goal_pose.pose.position.y
+        gz = goal_pose.pose.position.z if goal_pose.pose.position.z != 0.0 else rz_enu
+
+        vs = self.voxel_size
+        start = (int(math.floor(rx_enu/vs)), int(math.floor(ry_enu/vs)), int(math.floor(rz_enu/vs)))
+        goal = (int(math.floor(gx/vs)), int(math.floor(gy/vs)), int(math.floor(gz/vs)))
+
+        # Başlangıç veya hedef padding yüzünden "dolu" görünüyorsa en yakın boş voxele kaydır
+        start = self._get_nearest_free_voxel(*start)
+        goal = self._get_nearest_free_voxel(*goal)
+
+        if not start or not goal:
+            self.get_logger().warn("Start veya Goal etrafi tamamen dolu! -> HOVER")
+            self.planning_in_progress = False
             self._publish_nav_status("FAILED")
             return
 
-        self.get_logger().info(
-            f"Path alindi: {len(path.poses)} nokta | "
-            f"sure: {result.planning_time.sec}.{result.planning_time.nanosec//1000000:03d}s")
+        path_voxels = self._astar_3d(start, goal)
 
-        # İlk ve son noktayı logla (tanılama)
-        p0 = path.poses[0].pose.position
-        pN = path.poses[-1].pose.position
-        self.get_logger().info(
-            f"  start: ({p0.x:.1f}, {p0.y:.1f}) | "
-            f"end: ({pN.x:.1f}, {pN.y:.1f})")
+        if path_voxels is None:
+            self.get_logger().warn("3D A* path bulunamadi -> HOVER (Hedef iptal)")
+            self.planning_in_progress = False
+            self._publish_nav_status("FAILED")
+            return
 
-        # RViz2'de path'i göster
-        self.path_pub.publish(path)
+        # Voxel path -> map frame PoseStamped path (RViz görselleştirme)
+        path_msg = Path()
+        path_msg.header.frame_id = "map"
+        path_msg.header.stamp = self.get_clock().now().to_msg()
+        for vx, vy, vz in path_voxels:
+            ps = PoseStamped()
+            ps.header = path_msg.header
+            ps.pose.position.x = (vx + 0.5) * vs
+            ps.pose.position.y = (vy + 0.5) * vs
+            ps.pose.position.z = (vz + 0.5) * vs
+            ps.pose.orientation.w = 1.0
+            path_msg.poses.append(ps)
+        self.path_pub.publish(path_msg)
 
-        # Map frame path → NED waypoint listesi
-        ned_wps = self._convert_path_to_ned(path)
+        # Map ENU path -> NED waypoints
+        ned_wps = []
+        last_wp = None
+        for vx, vy, vz in path_voxels:
+            wx = (vx + 0.5) * vs  # ENU x
+            wy = (vy + 0.5) * vs  # ENU y
+            wz = (vz + 0.5) * vs  # ENU z
+            # ENU -> NED
+            wp = [wy, wx, -wz]  # NED: north=enu_y, east=enu_x, down=-enu_z
+            if last_wp is not None:
+                dist = math.sqrt((wp[0]-last_wp[0])**2 + (wp[1]-last_wp[1])**2)
+                if dist < self.wp_spacing:
+                    continue
+            ned_wps.append(wp)
+            last_wp = wp
+
+        # Son noktayı ekle
+        final = [gy, gx, -gz]
+        if not ned_wps or ned_wps[-1] != final:
+            ned_wps.append(final)
 
         if not ned_wps:
             self.get_logger().warn("Path donusumu bos — HOVER'da bekleniyor")
@@ -295,92 +417,74 @@ class DroneNavigator(Node):
         self.state = State.NAVIGATING
         self._reset_nav_progress_watchdog()
         self._publish_nav_status("NAVIGATING")
+        self.planning_in_progress = False
         self.get_logger().info(
-            f"Navigasyon basladi: {len(self.waypoints_ned)} waypoint")
+            f"3D navigasyon basladi: {len(self.waypoints_ned)} waypoint")
 
-    # ════════════════════════════════════════════
-    #  Koordinat Dönüşümleri
-    # ════════════════════════════════════════════
+    def _astar_3d(self, start, goal, max_iter=100000):
+        """3D A* path planning on voxel grid. Weighted for speed."""
+        def heuristic(a, b):
+            return math.sqrt((a[0]-b[0])**2 + (a[1]-b[1])**2 + (a[2]-b[2])**2)
 
-    def _convert_path_to_ned(self, path: Path):
-        """Map frame path → NED waypoint listesi.
+        # 26-connected neighbors (full 3D)
+        neighbors = []
+        for dx in (-1, 0, 1):
+            for dy in (-1, 0, 1):
+                for dz in (-1, 0, 1):
+                    if dx == 0 and dy == 0 and dz == 0:
+                        continue
+                    neighbors.append((dx, dy, dz))
 
-        1. TF ile map → odom (ENU) dönüşümü (1 kere sorgulanır)
-        2. ENU → NED: x_ned = y_enu, y_ned = x_enu, z_ned = -z_enu
-        3. Z sabit (takeoff yüksekliği)
-        4. Yakın waypoint'leri birleştir (downsample)
-        """
-        ned_waypoints = []
-        last_wp = None
+        open_set = [(heuristic(start, goal), 0.0, start)]
+        came_from = {}
+        g_score = {start: 0.0}
+        closed = set()
+        iterations = 0
 
-        # TF mevcut mu? Sadece 1 kere sorgula!
-        transform = None
-        try:
-            transform = self.tf_buffer.lookup_transform(
-                'odom', 'map', rclpy.time.Time(),
-                timeout=Duration(seconds=0.5))
-        except Exception:
-            self.get_logger().warn(
-                "TF map->odom bulunamadi, direkt donusum kullaniliyor")
+        while open_set and iterations < max_iter:
+            iterations += 1
+            f, g, current = heapq.heappop(open_set)
+            if current in closed:
+                continue
+            closed.add(current)
 
-        for pose_s in path.poses:
-            x_enu, y_enu = self._fast_pose_to_odom_enu(pose_s, transform)
+            # Goal check (1 voxel tolerance)
+            if abs(current[0]-goal[0]) <= 1 and abs(current[1]-goal[1]) <= 1 and abs(current[2]-goal[2]) <= 1:
+                # Reconstruct path
+                path = [goal, current]
+                while current in came_from:
+                    current = came_from[current]
+                    path.append(current)
+                path.reverse()
+                return path
 
-            # ENU → NED
-            x_ned = y_enu    # North = ENU_y
-            y_ned = x_enu    # East  = ENU_x
-            z_ned = -self.takeoff_height  # Sabit irtifa
-
-            wp = [x_ned, y_ned, z_ned]
-
-            # Downsample: çok yakın noktaları atla
-            if last_wp is not None:
-                dist = math.sqrt(
-                    (wp[0] - last_wp[0]) ** 2 + (wp[1] - last_wp[1]) ** 2)
-                if dist < self.wp_spacing:
+            cx, cy, cz = current
+            for dx, dy, dz in neighbors:
+                nx, ny, nz = cx+dx, cy+dy, cz+dz
+                if (nx, ny, nz) in closed:
                     continue
+                if not self._is_voxel_free(nx, ny, nz):
+                    continue
+                move_cost = math.sqrt(dx*dx + dy*dy + dz*dz)
+                ng = g + move_cost
+                if ng < g_score.get((nx, ny, nz), float('inf')):
+                    g_score[(nx, ny, nz)] = ng
+                    came_from[(nx, ny, nz)] = (cx, cy, cz)
+                    # Weighted A* (W=1.5) for much faster planning
+                    priority = ng + 1.5 * heuristic((nx, ny, nz), goal)
+                    heapq.heappush(open_set, (priority, ng, (nx, ny, nz)))
 
-            ned_waypoints.append(wp)
-            last_wp = wp
+        return None  # Path not found
 
-        # Son waypoint'i her zaman ekle
-        if path.poses:
-            fx, fy = self._fast_pose_to_odom_enu(path.poses[-1], transform)
-            final_wp = [fy, fx, -self.takeoff_height]
-            if not ned_waypoints or ned_waypoints[-1] != final_wp:
-                ned_waypoints.append(final_wp)
 
-        return ned_waypoints
-
-    def _fast_pose_to_odom_enu(self, pose_s: PoseStamped, transform):
-        """PoseStamped (map frame) → odom ENU (x, y) pozisyonu. (Hızlı çeviri)"""
-        if transform is not None:
-            try:
-                import tf2_geometry_msgs
-                odom_pose = tf2_geometry_msgs.do_transform_pose(pose_s.pose, transform)
-                return odom_pose.position.x, odom_pose.position.y
-            except Exception:
-                pass
-        # Fallback: map ≈ odom varsay
-        return pose_s.pose.position.x, pose_s.pose.position.y
-
-    def _pose_to_odom_enu(self, pose_s: PoseStamped, use_tf: bool):
-        """Eski yavaş dönüşüm (geriye dönük uyumluluk için saklanabilir veya kullanılabilir)."""
-        if use_tf:
-            try:
-                odom_pose = self.tf_buffer.transform(
-                    pose_s, 'odom', timeout=Duration(seconds=0.2))
-                return odom_pose.pose.position.x, odom_pose.pose.position.y
-            except Exception:
-                pass
-        # Fallback: map ≈ odom varsay
-        return pose_s.pose.position.x, pose_s.pose.position.y
 
     def _set_direct_goal(self, goal_pose: PoseStamped):
-        """Nav2 olmadan direkt hedefe git (fallback)."""
-        x_enu, y_enu = self._pose_to_odom_enu(goal_pose, use_tf=True)
+        """Engel bilgisi olmadan direkt hedefe git (fallback)."""
+        x_enu = goal_pose.pose.position.x
+        y_enu = goal_pose.pose.position.y
+        z_enu = goal_pose.pose.position.z if goal_pose.pose.position.z != 0.0 else self.takeoff_height
 
-        wp = [y_enu, x_enu, -self.takeoff_height]  # ENU → NED
+        wp = [y_enu, x_enu, -z_enu]  # ENU → NED
         self.waypoints_ned = [wp]
         self.wp_index = 0
         self.target_ned = wp
