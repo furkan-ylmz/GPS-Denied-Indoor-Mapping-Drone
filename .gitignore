@@ -1,0 +1,29 @@
+# ROS 2 (Colcon) çalışma alanı (workspace) dizinleri
+build/
+install/
+log/
+logs/
+
+# Python önbellek ve derlenmiş dosyaları
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# C++ derleme dosyaları ve geçici dosyalar
+*.o
+*.obj
+*.out
+*.cmake
+CMakeCache.txt
+
+# VS Code ve diğer IDE/Editör yapılandırmaları
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# İşletim sistemi kalıntıları
+.DS_Store
+Thumbs.db
