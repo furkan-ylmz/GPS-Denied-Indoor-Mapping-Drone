@@ -2,22 +2,6 @@
 <sdf version="1.9">
   <model name="test_building">
     <static>true</static>
-
-    <!--
-      Blender Y-up → Gazebo Z-up: roll = +π/2, Z offset = -2.09
-      Kat 1 iç yükseklik: ~2.32m (zemin Z≈0.63, tavan Z≈2.95)
-
-      COLLISION STRATEJİSİ:
-      Karmaşık OBJ mesh collision kullanılamaz — ODE fizik motoru ince
-      üçgen yüzeylerle (duvarlar, döşemeler) kararsız temas noktaları
-      üretir ve dronu fırlatır. Çözüm: basit kutu collision.
-      - s1 (zemin döşeme): drone iniş/kalkış yüzeyi
-      - s2 (tavan döşeme): dronu 1. katta tutar
-      - Duvarlar: collision yok, LiDAR GPU raycasting visual mesh
-        üzerinde çalışır → Nav2 costmap engelden kaçınır
-    -->
-
-    <!-- ── Zemin döşeme (s1) — collision box ── -->
     <link name="floor_slab">
       <pose>0 0 -17.776 1.5708 0 0</pose>
       <collision name="floor_collision">
@@ -29,10 +13,6 @@
       </collision>
     </link>
 
-    <!-- ── Bina görsel mesh (LiDAR + kamera için) ── -->
-    <!--
-      transparency=0.0
-    -->
     <link name="building_visual_link">
       <pose>0 0 -17.776 1.5708 0 0</pose>
       <visual name="building_visual">
@@ -44,6 +24,5 @@
         </geometry>
       </visual>
     </link>
-
   </model>
 </sdf>

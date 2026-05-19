@@ -1,6 +1,6 @@
 # Blender 5.1.1
 # www.blender.org
-mtllib testroom6.mtl
+mtllib testroom.mtl
 o s3.001
 v -21.823854 23.148335 20.234314
 v -21.823854 23.761578 20.234314

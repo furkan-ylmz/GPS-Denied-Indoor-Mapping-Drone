@@ -2,19 +2,11 @@
 <sdf version="1.9">
   <model name="x500_lidar">
 
-    <!-- ═══════════════════════════════════════════ -->
-    <!-- PX4 x500 Quadrotor (temel airframe)        -->
-    <!-- ═══════════════════════════════════════════ -->
     <include merge="true">
       <uri>x500</uri>
     </include>
 
-    <!-- ═══════════════════════════════════════════ -->
-    <!-- 3D LiDAR Sensörü (üstte, 360° tarama)     -->
-    <!-- Kapalı alan SLAM için 16 kanal LiDAR       -->
-    <!-- ═══════════════════════════════════════════ -->
     <link name="lidar_link">
-      <!-- Moved to nose (x=0.15) and pitched forward 90 degrees (pitch=1.570796) -->
       <pose relative_to="base_link">0.15 0 0 0 1.570796 0</pose>
       <inertial>
         <mass>0.23</mass>
@@ -30,7 +22,6 @@
       <collision name="lidar_collision">
         <geometry>
           <box>
-            <!-- Unitree L1 approximate dimensions -->
             <size>0.075 0.075 0.065</size>
           </box>
         </geometry>
@@ -46,8 +37,6 @@
           <diffuse>0.2 0.2 0.2 1</diffuse>
         </material>
       </visual>
-
-      <!-- 3D LiDAR: 16 kanal, 360°, iç mekan optimizasyonu -->
       <sensor name="lidar_3d" type="gpu_lidar">
         <gz_frame_id>lidar_link</gz_frame_id>
         <pose>0 0 0.03 0 0 0</pose>
@@ -89,9 +78,6 @@
       <child>lidar_link</child>
     </joint>
 
-    <!-- ═══════════════════════════════════════════ -->
-    <!-- Ön Kamera (RGB) — Kapı numarası tanıma     -->
-    <!-- ═══════════════════════════════════════════ -->
     <link name="camera_link">
       <pose relative_to="base_link">0.1 0 0.0 0 0 0</pose>
       <inertial>
@@ -124,12 +110,11 @@
         </material>
       </visual>
 
-      <!-- RGB Kamera: 640x480, 80° FOV -->
       <sensor name="front_camera" type="camera">
         <gz_frame_id>camera_link</gz_frame_id>
         <pose>0.01 0 0 0 0 0</pose>
         <camera>
-          <horizontal_fov>1.396</horizontal_fov>  <!-- ~80° -->
+          <horizontal_fov>1.396</horizontal_fov>
           <image>
             <width>640</width>
             <height>360</height>
