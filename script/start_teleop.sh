@@ -2,15 +2,15 @@
 
 # Çıkışta (Ctrl+C) arka plan süreçlerini temizlemek için fonksiyon
 cleanup() {
-    echo -e "\n[!] Çıkış yapılıyor. Arka plandaki Gazebo, PX4 ve Agent süreçleri sonlandırılıyor..."
-    killall -9 px4 ruby gz MicroXRCEAgent 2>/dev/null
+    echo -e "\n[!] Çıkış yapılıyor. Arka plandaki Gazebo, PX4, Agent ve Bridge süreçleri sonlandırılıyor..."
+    killall -9 px4 ruby gz MicroXRCEAgent ros2 2>/dev/null
     exit 0
 }
 # SIGINT (Ctrl+C) ve SIGTERM sinyallerini yakala
 trap cleanup SIGINT SIGTERM
 
 echo "Eski süreçler temizleniyor..."
-killall -9 px4 ruby gz MicroXRCEAgent 2>/dev/null
+killall -9 px4 ruby gz MicroXRCEAgent ros2 2>/dev/null
 
 PROJECT_DIR="/home/furkan/drone_project"
 PX4_DIR="/home/furkan/PX4-Autopilot"
@@ -23,17 +23,25 @@ mkdir -p ${LOG_DIR}
 source /opt/ros/jazzy/setup.bash
 source ${PROJECT_DIR}/install/setup.bash
 
-# Gecikmeli başlatma için pencereleri tmux, gnome-terminal vb. yerine 
-# arka planda (&) çalıştırıp loglarını projeye yazdıracağız.
-
 echo "1) MicroXRCEAgent başlatılıyor..."
 MicroXRCEAgent udp4 -p 8888 > ${LOG_DIR}/microdds.log 2>&1 &
 sleep 2
 
+echo "2) ROS-Gazebo Bridge başlatılıyor..."
+# Lidar ve TF verilerini Gazebo'dan ROS2'ye taşımak için bridge başlatıyoruz
+ros2 run ros_gz_bridge parameter_bridge \
+    /lidar@sensor_msgs/msg/PointCloud2[gz.msgs.PointCloudPacked \
+    /camera@sensor_msgs/msg/Image[gz.msgs.Image \
+    /camera_info@sensor_msgs/msg/CameraInfo[gz.msgs.CameraInfo \
+    > ${LOG_DIR}/bridge.log 2>&1 &
+
+# RViz'de tf hatası almamak için map -> lidar_link arası statik köprü
+ros2 run tf2_ros static_transform_publisher 0 0 0 0 0 0 map lidar_link > /dev/null 2>&1 &
+
 # Gazebo Env
 export GZ_SIM_RESOURCE_PATH="${PROJECT_DIR}/models:${PROJECT_DIR}/worlds:${PX4_DIR}/Tools/simulation/gz/models:${PX4_DIR}/Tools/simulation/gz/worlds"
 
-echo "2) Gazebo başlatılıyor..."
+echo "3) Gazebo başlatılıyor..."
 # İlk olarak Gazebo'yu kendi dünyamızla başlatıyoruz (Bu komut hem server hem GUI'yi açar)
 gz sim "${PROJECT_DIR}/worlds/test_building.sdf" > ${LOG_DIR}/gazebo.log 2>&1 &
 

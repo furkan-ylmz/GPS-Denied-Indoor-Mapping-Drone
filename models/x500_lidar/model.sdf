@@ -40,6 +40,8 @@
       <sensor name="lidar_3d" type="gpu_lidar">
         <gz_frame_id>lidar_link</gz_frame_id>
         <pose>0 0 0.03 0 0 0</pose>
+        <topic>/lidar</topic>
+        <update_rate>10</update_rate>
         <ray>
           <scan>
             <horizontal>
@@ -67,9 +69,7 @@
           </noise>
         </ray>
         <always_on>1</always_on>
-        <update_rate>11</update_rate>
         <visualize>false</visualize>
-        <topic>lidar</topic>
       </sensor>
     </link>
 
@@ -116,8 +116,8 @@
         <camera>
           <horizontal_fov>1.396</horizontal_fov>
           <image>
-            <width>640</width>
-            <height>360</height>
+            <width>2560</width>
+            <height>1440</height>
             <format>R8G8B8</format>
           </image>
           <clip>
