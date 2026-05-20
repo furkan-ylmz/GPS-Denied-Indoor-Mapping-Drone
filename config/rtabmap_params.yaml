@@ -1,0 +1,5 @@
+/rtabmap:
+  ros__parameters:
+    Icp/MaxTranslation: "3.0"
+    Icp/MaxCorrespondenceDistance: "1.0"
+    Icp/PointToPlane: "false"
