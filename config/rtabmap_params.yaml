@@ -1,5 +1,35 @@
 /rtabmap:
   ros__parameters:
-    Icp/MaxTranslation: "3.0"
-    Icp/MaxCorrespondenceDistance: "1.0"
-    Icp/PointToPlane: "false"
+    # ICP (Eşleştirme ve Voxel) Ayarları
+    Icp/VoxelSize: "0.08"                   # Nokta bulutunu 8 cm'lik küplere bölerek seyreltir (İşlemciyi rahatlatır)
+    Icp/PointToPlane: "true"                # Duvar ve zeminleri daha iyi eşleştirmek için noktadan-düzleme algoritması
+    Icp/PointToPlaneK: "20"                 # Düzlem hesaplaması için komşu nokta sayısı
+    Icp/Iterations: "50"                    # Eşleştirme kalitesini artırmak için iterasyon sayısı
+    Icp/Epsilon: "0.001"
+    Icp/MaxTranslation: "3.0"               # Dronun ani ve hızlı hareketlerini tolere eder
+    Icp/MaxCorrespondenceDistance: "1.0"    # Eşleşme aranacak maksimum mesafe
+
+    # Harita Güncelleme Sıklığı (Çok daha sık haritalama)
+    RGBD/AngularUpdate: "0.02"              # Dron sadece ~1 derece dönse bile haritayı güncelle
+    RGBD/LinearUpdate: "0.02"               # Dron sadece 2 cm ilerlese bile haritayı güncelle
+    RGBD/NeighborLinkRefining: "true"       # Komşu düğümler arası bağlantıları iyileştir
+
+    # Hafıza Ayarları
+    Mem/STMSize: "50"                       # Kısa süreli hafızada tutulacak nokta bulutu sayısı (Hızlı geri dönüşler için)
+    Mem/NotLinkedNodesKept: "false"         # Haritaya bağlanamayan askıda kalmış/hatalı noktaları sil (Hafıza tasarrufu)
+
+    # 3D Grid (Izgara) Ayarları - Tavan Filtresi Kapatıldı
+    Grid/3D: "true"                         # 3 Boyutlu haritalama modunu zorla
+    Grid/RayTracing: "true"                 # Boşlukları hesaplamak için ışın takibi yap
+    Grid/CellSize: "0.1"                    # Harita (Grid) çözünürlüğü 10 cm
+    Grid/NormalsSegmentation: "true"        # Yer, duvar ve engelleri daha iyi ayırmak için normal hesaplaması
+    Grid/NoiseFilteringRadius: "0.3"        # Havada asılı kalan tek tük gürültü noktalarını temizleme
+    Grid/NoiseFilteringMinNeighbors: "5"
+
+    # İleri Düzey Döngü Kapatma (Loop Closure) ve Optimizasyon
+    RGBD/ProximityBySpace: "true"           # Dron aynı fiziksel mekana tekrar geldiğinde haritayı anında düzelt
+    RGBD/ProximityMaxGraphDepth: "0"        # Uzaysal yakınlık araması için tüm harita grafiğini tara
+    RGBD/ProximityPathMaxNeighbors: "10"    # Yakınlık kontrolünde 10 komşu düğüme kadar analiz yap
+    RGBD/OptimizeFromGraphEnd: "false"      # Optimizasyonu baştan (haritanın ilk noktasından) sona doğru yap
+    Optimizer/Strategy: "1"                 # Harita kaymalarını düzeltmek için güçlü g2o optimizasyon motorunu kullan
+    Optimizer/GravitySigma: "0.3"           # Odometry'den gelen yerçekimi/eğim verisine güven oranını ayarla (Dron için önemli)

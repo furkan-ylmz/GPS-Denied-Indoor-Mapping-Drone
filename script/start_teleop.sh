@@ -40,23 +40,29 @@ echo "2.1) PX4 Odometry TF Broadcaster başlatılıyor..."
 # Dronun anlık konumunu Haritalama için (odom -> base_link) TF yayını olarak dönüştürür.
 python3 ${PROJECT_DIR}/src/px4_tf_broadcaster.py --ros-args -p use_sim_time:=true > ${LOG_DIR}/tf_broadcaster.log 2>&1 &
 
-echo "2.2) Lidar statik bağlantısı kuruluyor..."
-# Dron gövdesi ile Lidar arasındaki fiziksel konumu (base_link -> lidar_link) tanımlarız. (SDF'teki 0.15 metrelik ileri offset)
+echo "2.2) Lidar ve Kamera statik bağlantıları kuruluyor..."
+# Dron gövdesi ile Lidar arasındaki fiziksel konumu (base_link -> lidar_link)
 ros2 run tf2_ros static_transform_publisher 0.15 0 0 0 1.570796 0 base_link lidar_link --ros-args -p use_sim_time:=true > /dev/null 2>&1 &
+# Dron gövdesi ile Kamera arasındaki fiziksel konumu (ROS kamera eksenlerine göre: Z ileri, X sağ, Y aşağı)
+ros2 run tf2_ros static_transform_publisher 0.11 0 0 -1.570796 0 -1.570796 base_link camera_link --ros-args -p use_sim_time:=true > /dev/null 2>&1 &
 
 echo "2.3) RTAB-Map (3D SLAM / Octomap) başlatılıyor..."
 # Gerçek zamanlı haritalama algoritması
 ros2 run rtabmap_slam rtabmap \
     --ros-args \
     -p use_sim_time:=true \
+    -p delete_db_on_start:=true \
     -p subscribe_depth:=false \
-    -p subscribe_rgb:=false \
+    -p subscribe_rgb:=true \
     -p subscribe_scan_cloud:=true \
+    -p approx_sync:=true \
     -p frame_id:=base_link \
     -p map_frame_id:=map \
     -p odom_frame_id:=odom \
     --params-file ${PROJECT_DIR}/config/rtabmap_params.yaml \
     --remap scan_cloud:=/lidar/points \
+    --remap rgb/image:=/camera \
+    --remap rgb/camera_info:=/camera_info \
     > ${LOG_DIR}/rtabmap.log 2>&1 &
 
 # Gazebo Env
