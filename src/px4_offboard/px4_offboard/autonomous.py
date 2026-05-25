@@ -1,0 +1,310 @@
+"""
+Drone Navigator — Nav2 cmd_vel → PX4 TrajectorySetpoint Köprüsü
+
+Nav2'nin ürettiği /cmd_vel (Twist) hız komutlarını alıp PX4'ün
+TrajectorySetpoint mesajlarına çeviren ROS 2 düğümü.
+
+Durum Makinesi:
+  IDLE → ARMING → TAKING_OFF → NAVIGATING ↔ HOVERING
+
+Koordinat Dönüşümü:
+  - Nav2 cmd_vel: ENU body frame (base_link) — İleri=x, Sol=y, Yukarı=z
+  - PX4 TrajectorySetpoint: NED world frame — Kuzey=x, Doğu=y, Aşağı=z
+"""
+
+import math
+import rclpy
+from rclpy.node import Node
+from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
+
+from geometry_msgs.msg import Twist
+from px4_msgs.msg import (
+    OffboardControlMode,
+    TrajectorySetpoint,
+    VehicleCommand,
+    VehicleLocalPosition,
+    VehicleStatus,
+)
+
+# PX4 ile uyumlu QoS profili
+PX4_QOS = QoSProfile(
+    reliability=ReliabilityPolicy.BEST_EFFORT,
+    durability=DurabilityPolicy.VOLATILE,
+    history=HistoryPolicy.KEEP_LAST,
+    depth=1,
+)
+
+# Durum makinesi durumları
+STATE_IDLE = 0
+STATE_ARMING = 1
+STATE_TAKING_OFF = 2
+STATE_NAVIGATING = 3
+STATE_HOVERING = 4
+
+
+class DroneNavigator(Node):
+    """Nav2 cmd_vel komutlarını PX4 TrajectorySetpoint'e çeviren köprü düğüm."""
+
+    def __init__(self):
+        super().__init__('drone_navigator')
+
+        # --- Parametreler ---
+        self.target_altitude = -1.5       # NED (negatif = yukarı) → 1.5m yükseklik
+        self.takeoff_altitude = -1.5      # Kalkış hedef yüksekliği (NED)
+        self.vx_max = 1.2                 # Maks ileri/geri hız (m/s)
+        self.vy_max = 1.2                 # Maks yana hız (m/s)
+        self.wz_max = 1.5                 # Maks açısal hız (rad/s)
+        self.cmd_vel_timeout = 0.5        # cmd_vel mesaj zaman aşımı (saniye)
+        self.takeoff_threshold = 0.15     # Kalkış tamamlanma eşiği (m)
+
+        # --- Publisher'lar ---
+        self.offboard_mode_pub = self.create_publisher(
+            OffboardControlMode, '/fmu/in/offboard_control_mode', PX4_QOS)
+        self.setpoint_pub = self.create_publisher(
+            TrajectorySetpoint, '/fmu/in/trajectory_setpoint', PX4_QOS)
+        self.command_pub = self.create_publisher(
+            VehicleCommand, '/fmu/in/vehicle_command', PX4_QOS)
+
+        # --- Subscriber'lar ---
+        self.create_subscription(
+            VehicleLocalPosition, '/fmu/out/vehicle_local_position_v1',
+            self._pos_cb, PX4_QOS)
+        self.create_subscription(
+            VehicleStatus, '/fmu/out/vehicle_status_v4',
+            self._status_cb, PX4_QOS)
+        self.create_subscription(
+            Twist, '/cmd_vel', self._cmd_vel_cb, 10)
+
+        # --- Durum Değişkenleri ---
+        self.state = STATE_IDLE
+        self.pos = [0.0, 0.0, 0.0]       # Mevcut pozisyon (NED)
+        self.current_yaw = 0.0            # Mevcut yaw açısı (NED, rad)
+        self.initial_yaw_set = False
+        self.armed = False
+        self.nav_state = 0
+        self.offboard_counter = 0
+        self.last_cmd_vel = Twist()
+        self.last_cmd_vel_time = None
+
+        # --- Zamanlayıcı (20 Hz heartbeat) ---
+        self.timer = self.create_timer(0.05, self._heartbeat)
+
+        self.get_logger().info('Drone Navigator başlatıldı — Otonom mod hazır')
+        self.get_logger().info(f'  Hedef yükseklik: {abs(self.target_altitude):.1f}m')
+        self.get_logger().info(f'  Maks hız: vx={self.vx_max}, vy={self.vy_max} m/s')
+
+    # ─────────────────────────────────────────────────────────
+    # Callback'ler
+    # ─────────────────────────────────────────────────────────
+
+    def _pos_cb(self, msg):
+        """PX4 yerel pozisyon güncellemesi (NED frame)."""
+        self.pos = [msg.x, msg.y, msg.z]
+        if not self.initial_yaw_set and not math.isnan(msg.heading):
+            self.current_yaw = msg.heading
+            self.initial_yaw_set = True
+        elif not math.isnan(msg.heading):
+            self.current_yaw = msg.heading
+
+    def _status_cb(self, msg):
+        """PX4 araç durumu güncellemesi."""
+        self.get_logger().info(f'Status received: arming_state={msg.arming_state}')
+        old = self.armed
+        self.armed = (msg.arming_state == VehicleStatus.ARMING_STATE_ARMED)
+        self.nav_state = msg.nav_state
+        if self.armed and not old:
+            self.get_logger().info('✅ ARM edildi')
+        if not self.armed and old:
+            self.get_logger().info('🔴 DISARM edildi')
+
+    def _cmd_vel_cb(self, msg):
+        """Nav2'den gelen hız komutu."""
+        self.last_cmd_vel = msg
+        self.last_cmd_vel_time = self.get_clock().now()
+
+    # ─────────────────────────────────────────────────────────
+    # Ana Döngü (20 Hz)
+    # ─────────────────────────────────────────────────────────
+
+    def _heartbeat(self):
+        """Durum makinesini çalıştır ve PX4'e setpoint gönder."""
+        ts = self._ts()
+
+        if self.state == STATE_IDLE:
+            self._handle_idle(ts)
+        elif self.state == STATE_ARMING:
+            self._handle_arming(ts)
+        elif self.state == STATE_TAKING_OFF:
+            self._handle_takeoff(ts)
+        elif self.state in (STATE_NAVIGATING, STATE_HOVERING):
+            self._handle_navigation(ts)
+
+    def _handle_idle(self, ts):
+        """IDLE: Setpoint göndermeye başla, yeterli olunca arm et."""
+        # Pozisyon modu ile hover setpoint gönder
+        self._publish_offboard_mode(ts, position=True, velocity=False)
+        self._publish_position_setpoint(ts,
+                                        x=self.pos[0], y=self.pos[1],
+                                        z=self.takeoff_altitude)
+
+        self.offboard_counter += 1
+
+        if self.offboard_counter >= 20:
+            self.get_logger().info('Yeterli setpoint gönderildi, ARMING durumuna geçiliyor...')
+            self.state = STATE_ARMING
+
+    def _handle_arming(self, ts):
+        """ARMING: Offboard mod ve arm komutlarını gönder."""
+        self._publish_offboard_mode(ts, position=True, velocity=False)
+        self._publish_position_setpoint(ts,
+                                        x=self.pos[0], y=self.pos[1],
+                                        z=self.takeoff_altitude)
+
+        if self.offboard_counter % 20 == 0:
+            self.get_logger().info('OFFBOARD mod komutu gönderiliyor...')
+            self._send_command(VehicleCommand.VEHICLE_CMD_DO_SET_MODE, 1.0, 6.0)
+            self._send_command(VehicleCommand.VEHICLE_CMD_COMPONENT_ARM_DISARM, 1.0)
+            
+        self.offboard_counter += 1
+
+        if self.armed:
+            self.state = STATE_TAKING_OFF
+            self.get_logger().info(f'🚀 KALKIŞ başladı → Hedef: {abs(self.takeoff_altitude):.1f}m')
+
+    def _handle_takeoff(self, ts):
+        """TAKING_OFF: Hedef yüksekliğe çıkana kadar pozisyon kontrolü."""
+        self._publish_offboard_mode(ts, position=True, velocity=False)
+        self._publish_position_setpoint(ts,
+                                        x=self.pos[0], y=self.pos[1],
+                                        z=self.takeoff_altitude)
+
+        # Hedef yüksekliğe ulaşıldı mı kontrol et
+        alt_error = abs(self.pos[2] - self.takeoff_altitude)
+        if alt_error < self.takeoff_threshold and self.armed:
+            self.get_logger().info('✅ Kalkış tamamlandı — HOVERING durumuna geçiliyor')
+            self.state = STATE_HOVERING
+
+    def _handle_navigation(self, ts):
+        """NAVIGATING/HOVERING: cmd_vel komutlarına göre uç veya hover et."""
+        now = self.get_clock().now()
+        has_cmd_vel = (
+            self.last_cmd_vel_time is not None and
+            (now - self.last_cmd_vel_time).nanoseconds / 1e9 < self.cmd_vel_timeout
+        )
+
+        if has_cmd_vel:
+            # Nav2'den aktif hız komutu var — NAVİGASYON modu
+            if self.state != STATE_NAVIGATING:
+                self.get_logger().info('🧭 NAVİGASYON başladı — cmd_vel takip ediliyor')
+                self.state = STATE_NAVIGATING
+
+            self._publish_offboard_mode(ts, position=True, velocity=True)
+
+            cmd = self.last_cmd_vel
+
+            # Hız limitleme
+            vx_body = max(-self.vx_max, min(self.vx_max, cmd.linear.x))
+            vy_body = max(-self.vy_max, min(self.vy_max, cmd.linear.y))
+            wz = max(-self.wz_max, min(self.wz_max, cmd.angular.z))
+
+            # Body FLU → NED world frame dönüşümü (doğrudan)
+            #
+            # Nav2 cmd_vel: FLU body frame (Forward=x, Left=y)
+            # PX4 setpoint: NED world frame (North=x, East=y, Down=z)
+            #
+            # FLU→FRD: vx_frd = vx_flu, vy_frd = -vy_flu
+            # FRD→NED (heading h, CW from North):
+            #   vx_ned = cos(h)*vx_frd - sin(h)*vy_frd
+            #   vy_ned = sin(h)*vx_frd + cos(h)*vy_frd
+            # Combined (substituting vy_frd = -vy_flu):
+            #   vx_ned = cos(h)*vx + sin(h)*vy
+            #   vy_ned = sin(h)*vx - cos(h)*vy
+            h = self.current_yaw  # NED heading from PX4
+            cos_h = math.cos(h)
+            sin_h = math.sin(h)
+            vx_ned = cos_h * vx_body + sin_h * vy_body
+            vy_ned = sin_h * vx_body - cos_h * vy_body
+
+            sp = TrajectorySetpoint()
+            sp.velocity = [float(vx_ned), float(vy_ned), float('nan')]
+            sp.position = [float('nan'), float('nan'), float(self.target_altitude)]
+            sp.yaw = float('nan')
+            sp.yawspeed = float(-wz)  # ROS CCW → NED CW: yön ters
+            sp.timestamp = ts
+            self.setpoint_pub.publish(sp)
+
+        else:
+            # cmd_vel timeout — HOVER modu
+            if self.state != STATE_HOVERING:
+                self.get_logger().info('⏸️  HOVER — cmd_vel zaman aşımı, yerinde duruyorum')
+                self.state = STATE_HOVERING
+
+            self._publish_offboard_mode(ts, position=True, velocity=True)
+
+            sp = TrajectorySetpoint()
+            sp.velocity = [0.0, 0.0, float('nan')]
+            sp.position = [float('nan'), float('nan'), float(self.target_altitude)]
+            sp.yaw = float(self.current_yaw)
+            sp.yawspeed = float('nan')
+            sp.timestamp = ts
+            self.setpoint_pub.publish(sp)
+
+    # ─────────────────────────────────────────────────────────
+    # Yardımcı Metodlar
+    # ─────────────────────────────────────────────────────────
+
+    def _publish_offboard_mode(self, ts, position=True, velocity=False):
+        """OffboardControlMode mesajı yayınla."""
+        mode = OffboardControlMode()
+        mode.position = position
+        mode.velocity = velocity
+        mode.acceleration = False
+        mode.attitude = False
+        mode.body_rate = False
+        mode.timestamp = ts
+        self.offboard_mode_pub.publish(mode)
+
+    def _publish_position_setpoint(self, ts, x, y, z):
+        """Pozisyon setpoint mesajı yayınla."""
+        sp = TrajectorySetpoint()
+        sp.position = [float(x), float(y), float(z)]
+        sp.velocity = [float('nan'), float('nan'), float('nan')]
+        sp.acceleration = [float('nan'), float('nan'), float('nan')]
+        sp.yaw = float(self.current_yaw)
+        sp.timestamp = ts
+        self.setpoint_pub.publish(sp)
+
+    def _send_command(self, cmd, p1=0.0, p2=0.0, p7=0.0):
+        """PX4 araç komutu gönder."""
+        msg = VehicleCommand()
+        msg.command = cmd
+        msg.param1 = float(p1)
+        msg.param2 = float(p2)
+        msg.param7 = float(p7)
+        msg.target_system = 1
+        msg.target_component = 1
+        msg.source_system = 1
+        msg.source_component = 1
+        msg.from_external = True
+        msg.timestamp = self._ts()
+        self.command_pub.publish(msg)
+
+    def _ts(self):
+        """Mikrosaniye cinsinden zaman damgası."""
+        return int(self.get_clock().now().nanoseconds / 1000)
+
+
+def main(args=None):
+    rclpy.init(args=args)
+    node = DroneNavigator()
+    try:
+        rclpy.spin(node)
+    except KeyboardInterrupt:
+        node.get_logger().info('Drone Navigator durduruluyor...')
+    finally:
+        node.destroy_node()
+        rclpy.shutdown()
+
+
+if __name__ == '__main__':
+    main()

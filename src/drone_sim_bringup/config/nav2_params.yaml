@@ -1,0 +1,256 @@
+# ============================================================
+# Nav2 Otonom Navigasyon Parametreleri
+# Holonomik Drone (MPPI Omni) — ROS 2 Jazzy
+# ============================================================
+
+# --- Davranış Ağacı (Behavior Tree) Navigatörü ---
+# Dronun genel otonom kararlarını (hedefe git, sıkışırsan kurtarma yap) yönetir.
+bt_navigator:
+  ros__parameters:
+    use_sim_time: true
+    global_frame: map             # Dünya koordinat sistemi
+    robot_base_frame: base_link   # Dronun merkezi referans noktası
+    odom_topic: /odom             # RTAB-Map'ten gelen odometry verisi
+
+# --- Yerel Kontrolcü (MPPI Omni) ---
+# Dronun anlık hareketlerini (hız, ivme, dönüşler) ve engellerden kaçışını hesaplar.
+controller_server:
+  ros__parameters:
+    use_sim_time: true
+    controller_frequency: 20.0        # Saniyede 20 kez karar üretir (Dronun hızlı tepki vermesi için çok önemli)
+    min_x_velocity_threshold: 0.001
+    min_y_velocity_threshold: 0.001   # Y ekseninde (sağ/sol) çok küçük hızlara bile izin verir (Holonomik hareket)
+    min_theta_velocity_threshold: 0.001
+    progress_checker_plugins: ["progress_checker"]
+    goal_checker_plugins: ["goal_checker"]
+    controller_plugins: ["FollowPath"]
+
+    # İlerleme Kontrolcüsü (Dronun bir yere sıkışıp sıkışmadığını anlar)
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5   # 10 saniye içinde en az 0.5 metre hareket edemezse "sıkıştım" der
+      movement_time_allowance: 10.0
+
+    # Hedefe Ulaşım Kontrolcüsü (Hedefe vardığını nasıl anlayacak?)
+    goal_checker:
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25         # Hedefin 25 cm yakınına gelirse "vardım" sayar
+      yaw_goal_tolerance: 0.25        # Hedefteki dönüklük açısı toleransı (Radyan)
+      stateful: true
+
+    # MPPI Kontrolcüsü (Model Predictive Path Integral) - Ana Uçuş Algoritması
+    FollowPath:
+      plugin: "nav2_mppi_controller::MPPIController"
+      time_steps: 30                  # Geleceğe yönelik 30 adım (30 * 0.05s = 1.5 saniye) sonrasını tahmin eder
+      model_dt: 0.05                  # Tahmin adımlarının süresi
+      batch_size: 500                 # Saniyede 20 kere, her seferinde rastgele 500 farklı uçuş rotası ihtimali hesaplar
+      iteration_count: 1
+      temperature: 0.3                # Bu değer ne kadar düşükse, dron en güvenli ve düz olan tek rotaya o kadar sadık kalır
+      gamma: 0.015
+      motion_model: "Omni"            # KRİTİK: Dronun sağa-sola, ileri-geri her yöne dönebilmesini sağlayan model
+      visualize: false                # RViz'de o 500 rotayı çizmesini kapatır (Açıksa CPU'yu bitirir)
+      prune_distance: 1.7
+      transform_tolerance: 0.1
+      retry_attempt_limit: 1
+
+      # Uçuş Hız Limitleri (m/s)
+      vx_max: 1.2                     # Maksimum İleri hızı
+      vx_min: -1.2                    # Maksimum Geri hızı (Omni olduğu için eksi değer alabilir)
+      vy_max: 1.2                     # Maksimum Sağ/Sol yana kayma hızı
+      wz_max: 1.5                     # Maksimum kendi etrafında dönme (Yaw) hızı (rad/s)
+
+      # İvme Limitleri (m/s²) - Kalkış ve duruşların yumuşaklığı
+      ax_max: 1.5
+      ax_min: -1.5
+      ay_max: 1.5
+      ay_min: -1.5
+      az_max: 2.0
+
+      # Rastgelelik (Örnekleme) Yayılımları - Dronun yapacağı küçük hareket arayışlarının şiddeti
+      vx_std: 0.2
+      vy_std: 0.2
+      wz_std: 0.4                     # Yaw (Dönüş) yönündeki arayış (Küçük yaw titreşimlerinin ana nedenlerinden biri)
+
+      # =========================================================
+      # CRITIC'ler (Eleştirmenler) - MPPI'ın Karar Verme Mekanizması
+      # O 500 rastgele rotanın her birine puan veren jüri üyeleridir.
+      # =========================================================
+      critics: [
+        "ConstraintCritic",
+        "CostCritic",
+        "GoalCritic",
+        "GoalAngleCritic",
+        "PathAlignCritic",
+        "PathFollowCritic",
+        "PathAngleCritic"
+      ]
+
+      # 1. Engel Çarpışma Jürisi (En önemlisi)
+      ConstraintCritic:
+        enabled: true
+        cost_weight: 4.0              # Çarpışacak rotaları acımasızca eler
+        cost_power: 1
+
+      # 2. Maliyet Jürisi (Duvarlara olan uzaklık)
+      CostCritic:
+        enabled: true
+        cost_weight: 3.81             # Duvara/engele yakın geçen rotalara kötü puan verir
+        cost_power: 1
+        critical_cost: 300.0
+        consider_footprint: false
+        collision_cost: 1000000.0     # Engelin tam üstünden geçen rotaya sonsuz ceza
+        near_goal_distance: 1.0
+
+      # 3. Hedefe Yaklaşma Jürisi
+      GoalCritic:
+        enabled: true
+        cost_weight: 5.0              # Dronu sürekli hedefe doğru çeken güçtür
+        cost_power: 1
+        threshold_to_consider: 1.4
+
+      # 4. Hedef Açısı Jürisi
+      GoalAngleCritic:
+        enabled: true
+        cost_weight: 3.0              # Hedefe varıldığında dronun burnunun doğru yöne bakmasını sağlar
+        cost_power: 1
+        threshold_to_consider: 0.5
+
+      # 5. Yola Hizalama Jürisi
+      PathAlignCritic:
+        enabled: true
+        cost_weight: 14.0             # Dronun global (A*) çizgi üzerinden çıkmasını engeller, yola yapıştırır
+        cost_power: 1
+        max_path_occupancy_ratio: 0.05
+        threshold_to_consider: 0.5
+        trajectory_point_step: 3
+
+      # 6. Yolu Takip Jürisi
+      PathFollowCritic:
+        enabled: true
+        cost_weight: 5.0              # Yolun ilerisindeki noktalara ulaşmasını teşvik eder
+        cost_power: 1
+        offset_from_furthest: 5
+        threshold_to_consider: 1.4
+
+      # 7. Yol Açısı Jürisi (Dronun YAW hareketlerini belirler)
+      PathAngleCritic:
+        enabled: true
+        cost_weight: 2.0              # Dronun burnunun gideceği yöne dönük olmasını sağlar. (Yolda giderken kafasını sağa sola çevirmesinin temel nedenidir)
+        cost_power: 1
+        threshold_to_consider: 0.5
+        offset_from_furthest: 4
+        max_angle_to_furthest: 1.0
+
+
+# --- Global Planlayıcı (A* Kuşbakışı Rota Bulucu) ---
+# Başlangıçtan hedefe labirent çözer gibi ana hattı (kırmızı çizgi) çizer.
+planner_server:
+  ros__parameters:
+    use_sim_time: true
+    planner_plugins: ["GridBased"]
+
+    GridBased:
+      plugin: "nav2_navfn_planner::NavfnPlanner"
+      use_astar: true                 # A* (A-yıldız) algoritmasını kullanır (En kısa yol)
+      allow_unknown: true             # Henüz haritası çıkarılmamış siyah bölgelerden geçmesine izin verir
+      tolerance: 0.5                  # Hedefin tam üstü engelli ise 50 cm yakınına rota çizer
+
+# --- Kurtarma Davranışları (Recovery) ---
+behavior_server:
+  ros__parameters:
+    use_sim_time: true
+    behavior_plugins: ["spin", "backup", "wait"]
+    spin:
+      plugin: "nav2_behaviors::Spin"  # Sıkışınca kendi etrafında dönerek Lidar ile etrafı tarama kurtarması
+    backup:
+      plugin: "nav2_behaviors::BackUp" # Geri geri çıkma kurtarması
+    wait:
+      plugin: "nav2_behaviors::Wait"
+    global_frame: map
+    robot_base_frame: base_link
+    transform_tolerance: 0.1
+    simulate_ahead_time: 2.0
+
+# ============================================================
+# GLOBAL COSTMAP — RTAB-Map /map üzerinden statik dünya
+# ============================================================
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      use_sim_time: true
+      update_frequency: 1.0           # Saniyede 1 kez haritayı günceller (Çok sık olması CPU'yu yorar, gereksizdir)
+      publish_frequency: 1.0
+      global_frame: map
+      robot_base_frame: base_link
+      robot_radius: 0.40              # Dronun çarpışma güvenliği için sanal yarıçapı (40 cm)
+      resolution: 0.05                # Haritadaki her pikselin gerçek hayattaki boyutu (5 cm)
+      track_unknown_space: true
+      rolling_window: false           # Harita sabittir, dronla birlikte kaymaz
+
+      plugins: ["static_layer", "inflation_layer"]
+
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: true
+        enabled: true
+        map_topic: "/map"             # RTAB-Map'ten gelen kalıcı 2D haritayı okur
+        subscribe_to_updates: true
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0      # Duvarlardan uzaklaştıkça tehlikenin azalma hızı
+        inflation_radius: 0.75        # Duvarların etrafına çizilen 75 cm'lik görünmez "uzak dur" alanı
+
+# ============================================================
+# LOCAL COSTMAP — /lidar/points ile Anlık Engeller ve Refleksler
+# ============================================================
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      use_sim_time: true
+      update_frequency: 5.0           # Saniyede 5 kez güncellenir (Aniden çıkan nesnelere refleks göstermek için)
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_link
+      robot_radius: 0.40
+      resolution: 0.05
+      rolling_window: true            # Dron hareket ettikçe harita dronun etrafında kayar (5x5 metrelik görüş penceresi)
+      width: 5                        # Çevresindeki 5 metrelik alanı anlık olarak inceler
+      height: 5
+
+      plugins: ["obstacle_layer", "inflation_layer"]
+
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: true
+        observation_sources: lidar_points
+        lidar_points:
+          topic: "/lidar/points"      # Lidar nokta bulutunu doğrudan okur
+          data_type: "PointCloud2"
+          marking: true               # Lidar ışını bir şeye çarparsa oraya "engel var" işareti koy
+          clearing: true              # Lidar ışını boşluktan geçerse o bölgeyi "engel yok" diye temizle
+          obstacle_max_range: 3.0     # Dron sadece 3 metreye kadar olan engelleri umursar
+          raytrace_max_range: 4.0     # Dron 4 metreye kadar olan boşlukları tarayıp temizler
+          max_obstacle_height: 2.0    # 2 Metreden yüksekteki engelleri (tavan vb) umursama
+          min_obstacle_height: 0.2    # 20 cm'den alçak engelleri (zemin vb) umursama
+          inf_is_valid: false
+          sensor_frame: "lidar_link"
+
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 3.0
+        inflation_radius: 0.75
+
+# ============================================================
+# LIFECYCLE MANAGER
+# ============================================================
+lifecycle_manager_navigation:
+  ros__parameters:
+    use_sim_time: true
+    autostart: true                   # Nav2 sistemini "active" durumuna otomatik geçirir
+    bond_timeout: 4.0
+    node_names:
+      - controller_server
+      - planner_server
+      - behavior_server
+      - bt_navigator

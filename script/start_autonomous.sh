@@ -29,12 +29,14 @@ echo "Gazebo başlatılıyor..."
 export GZ_CONFIG_PATH="${GZ_CONFIG_PATH}:/usr/share/gz"
 gz sim "${PROJECT_DIR}/worlds/test_building.sdf" > ${PROJECT_DIR}/logs/gazebo.log 2>&1 &
 
-echo "=========================================================="
-echo "Sistem ROS 2 Launch üzerinden arka planda başlatılıyor..."
-echo "=========================================================="
+echo "======================================================================"
+echo "  OTONOM NAVİGASYON MODU"
+echo "  Sistem ROS 2 Launch üzerinden arka planda başlatılıyor..."
+echo "  (SLAM + Nav2 + Drone Navigator)"
+echo "======================================================================"
 
-# Tüm arka plan düğümlerini (Simülasyon, SLAM, Bridge, TF, RViz) launch ile başlatıyoruz
-ros2 launch drone_sim_bringup bringup.launch.py autonomous:=false &
+# Tüm arka plan düğümlerini (Simülasyon, SLAM, Bridge, TF, RViz, Nav2, DroneNavigator) launch ile başlatıyoruz
+ros2 launch drone_sim_bringup bringup.launch.py &
 LAUNCH_PID=$!
 
 echo "Gazebo'nun hazır olması bekleniyor..."
@@ -52,14 +54,18 @@ export PX4_GZ_MODEL_POSE="10.00,-2.00,0.62,0,0,0"
 make px4_sitl gz_x500_lidar > ${PROJECT_DIR}/logs/px4_gazebo.log 2>&1 &
 sleep 5
 
-echo "======================================="
-echo "NOT: Gazebo'da PLAY (Oynat) tuşuna basmayı GZ GUI üzerinden unutmayın!"
-echo "Hazır olduğunuzda 't' tuşu ile kalkış yapabilirsiniz."
-echo "======================================="
+echo "======================================================================"
+echo "  OTONOM NAVİGASYON SİSTEMİ HAZIR"
+echo "======================================================================"
+echo ""
+echo "  1. Gazebo'da PLAY (▶) tuşuna basın"
+echo "  2. Dron otomatik olarak kalkacak ve 1.5m yükseklikte hover edecek"
+echo "  3. RViz'de harita oluştuğunda '2D Goal Pose' ile hedef verin"
+echo "  4. Dron A* rotasını MPPI ile takip edecek"
+echo ""
+echo "  Çıkış için: Ctrl+C"
+echo "======================================================================"
 
-# Yeni oluşturduğumuz resmi ROS 2 paketi üzerinden teleop'u başlatıyoruz
-ros2 run px4_offboard teleop
-
-# Teleop kapanırsa launch dosyasını da kapat
-kill $LAUNCH_PID
+# Launch çalışırken bekle
+wait $LAUNCH_PID
 cleanup

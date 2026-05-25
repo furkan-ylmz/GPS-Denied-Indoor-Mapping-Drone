@@ -1,9 +1,11 @@
 import os
 from ament_index_python.packages import get_package_share_directory
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess, DeclareLaunchArgument, TimerAction
+from launch.actions import ExecuteProcess, DeclareLaunchArgument, TimerAction, IncludeLaunchDescription
+from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
+from launch.conditions import IfCondition
 
 def generate_launch_description():
     home_dir = os.path.expanduser('~')
@@ -23,8 +25,17 @@ def generate_launch_description():
         output='screen'
     )
 
+    # 1.5 Declare Launch Argument for autonomous mode
+    autonomous_arg = DeclareLaunchArgument(
+        'autonomous',
+        default_value='true',
+        description='Whether to launch autonomous navigation nodes (Nav2 and Drone Navigator)'
+    )
+
     # 2. Gazebo Simulator
-    gazebo_sim = ExecuteProcess(
+    # NOT: Gazebo, start_teleop.sh / start_autonomous.sh tarafından zamanlama kontrolü için
+    # ayrıca başlatılır. Bu değişken burada referans olarak tanımlıdır, LaunchDescription'a dahil DEĞİLDİR.
+    gazebo_sim = ExecuteProcess(  # noqa: F841
         cmd=['gz', 'sim', f"{project_dir}/worlds/test_building.sdf"],
         output='screen'
     )
@@ -83,7 +94,7 @@ def generate_launch_description():
                 'use_sim_time': True,
                 'delete_db_on_start': True,
                 'subscribe_depth': False,
-                'subscribe_rgb': True,
+                'subscribe_rgb': False,
                 'subscribe_scan_cloud': True,
                 'approx_sync': True,
                 'frame_id': 'base_link',
@@ -110,7 +121,34 @@ def generate_launch_description():
         output='screen'
     )
 
+    # 8. Nav2 Otonom Navigasyon Stack'i
+    nav2_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(bringup_dir, 'launch', 'nav2.launch.py')
+        ),
+        condition=IfCondition(LaunchConfiguration('autonomous'))
+    )
+
+    # 9. Autonomous Bridge (cmd_vel → PX4 köprüsü)
+    autonomous = Node(
+        package='px4_offboard',
+        executable='autonomous',
+        name='autonomous',
+        parameters=[{'use_sim_time': True}],
+        condition=IfCondition(LaunchConfiguration('autonomous')),
+        output='screen'
+    )
+
     return LaunchDescription([
+        autonomous_arg,
         micro_dds_agent,
-        TimerAction(period=2.0, actions=[gz_bridge, px4_tf, static_tf_lidar, static_tf_camera, rtabmap_node, rviz_node])
+        # 2 saniye sonra: Temel altyapı (Bridge, TF, SLAM, RViz)
+        TimerAction(period=2.0, actions=[
+            gz_bridge, px4_tf, static_tf_lidar, static_tf_camera,
+            rtabmap_node, rviz_node
+        ]),
+        # 8 saniye sonra: Nav2 ve Autonomous (RTAB-Map'in /map üretmesini bekle)
+        TimerAction(period=8.0, actions=[
+            nav2_launch, autonomous
+        ]),
     ])

@@ -9,9 +9,9 @@
     Icp/MaxTranslation: "3.0"               # Dronun ani ve hızlı hareketlerini tolere eder
     Icp/MaxCorrespondenceDistance: "1.0"    # Eşleşme aranacak maksimum mesafe
 
-    # Harita Güncelleme Sıklığı (Çok daha sık haritalama)
-    RGBD/AngularUpdate: "0.02"              # Dron sadece ~1 derece dönse bile haritayı güncelle
-    RGBD/LinearUpdate: "0.02"               # Dron sadece 2 cm ilerlese bile haritayı güncelle
+    # Harita Güncelleme Sıklığı (İşlemci dostu ve verimli haritalama)
+    RGBD/AngularUpdate: "0.1"               # Dron sadece ~5.7 derece döndüğünde haritayı güncelle
+    RGBD/LinearUpdate: "0.1"                # Dron sadece 10 cm ilerlediğinde haritayı güncelle
     RGBD/NeighborLinkRefining: "true"       # Komşu düğümler arası bağlantıları iyileştir
 
     # Hafıza Ayarları

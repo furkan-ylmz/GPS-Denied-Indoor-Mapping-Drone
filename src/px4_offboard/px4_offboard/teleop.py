@@ -59,7 +59,7 @@ class DroneTeleop(Node):
             VehicleLocalPosition, "/fmu/out/vehicle_local_position_v1",
             self._pos_cb, PX4_QOS)
         self.create_subscription(
-            VehicleStatus, "/fmu/out/vehicle_status_v2",
+            VehicleStatus, "/fmu/out/vehicle_status_v4",
             self._status_cb, PX4_QOS)
 
         self.pos = [0.0, 0.0, 0.0]
