@@ -51,9 +51,10 @@ class DroneNavigator(Node):
         # --- Parametreler ---
         self.target_altitude = -1.5       # NED (negatif = yukarı) → 1.5m yükseklik
         self.takeoff_altitude = -1.5      # Kalkış hedef yüksekliği (NED)
-        self.vx_max = 1.2                 # Maks ileri/geri hız (m/s)
-        self.vy_max = 1.2                 # Maks yana hız (m/s)
-        self.wz_max = 1.5                 # Maks açısal hız (rad/s)
+        self.vx_max = 2.0                 # Maks ileri hızı (m/s) — nav2_params.yaml ile senkron
+        self.vy_max = 1.5                 # Maks yana hız (m/s) — nav2_params.yaml ile senkron
+        self.wz_max = 0.785               # Maks açısal hız (~45°/s) — Odometriyi bozmayan yumuşak dönüş
+        self.yaw_deadband = 0.10          # ~6°/s'den küçük açısal hızları yoksay (titreşim filtresi, gerçek dönüşleri geçirir)
         self.cmd_vel_timeout = 0.5        # cmd_vel mesaj zaman aşımı (saniye)
         self.takeoff_threshold = 0.15     # Kalkış tamamlanma eşiği (m)
 
@@ -85,6 +86,7 @@ class DroneNavigator(Node):
         self.offboard_counter = 0
         self.last_cmd_vel = Twist()
         self.last_cmd_vel_time = None
+        self.is_yaw_correcting = False
 
         # --- Zamanlayıcı (20 Hz heartbeat) ---
         self.timer = self.create_timer(0.05, self._heartbeat)
@@ -92,6 +94,7 @@ class DroneNavigator(Node):
         self.get_logger().info('Drone Navigator başlatıldı — Otonom mod hazır')
         self.get_logger().info(f'  Hedef yükseklik: {abs(self.target_altitude):.1f}m')
         self.get_logger().info(f'  Maks hız: vx={self.vx_max}, vy={self.vy_max} m/s')
+        self.get_logger().info(f'  Yaw hızı: {self.wz_max:.3f} rad/s (~{math.degrees(self.wz_max):.0f}°/s), deadband: ~{math.degrees(self.yaw_deadband):.0f}°')
 
     # ─────────────────────────────────────────────────────────
     # Callback'ler
@@ -202,10 +205,48 @@ class DroneNavigator(Node):
 
             cmd = self.last_cmd_vel
 
-            # Hız limitleme
-            vx_body = max(-self.vx_max, min(self.vx_max, cmd.linear.x))
-            vy_body = max(-self.vy_max, min(self.vy_max, cmd.linear.y))
-            wz = max(-self.wz_max, min(self.wz_max, cmd.angular.z))
+            # --- Yöntem 2: Hız Vektörüne Göre Histerezisli Yaw Kontrolü ---
+            raw_vx = cmd.linear.x
+            raw_vy = cmd.linear.y
+            speed = math.sqrt(raw_vx**2 + raw_vy**2)
+
+            vx_body = raw_vx
+            vy_body = raw_vy
+            wz = 0.0
+
+            if speed > 0.15:
+                # Hareket halindeyken hız vektörü açısını hesapla (body frame'de yaw hatası)
+                yaw_err = math.atan2(raw_vy, raw_vx)
+                
+                # Histerezis durum geçişleri
+                if not self.is_yaw_correcting:
+                    # Sapma 30 dereceden büyükse düzeltmeye başla
+                    if abs(yaw_err) > math.radians(30):
+                        self.is_yaw_correcting = True
+                else:
+                    # Sapma 10 derecenin altına inince düzeltmeyi durdur
+                    if abs(yaw_err) < math.radians(10):
+                        self.is_yaw_correcting = False
+
+                if self.is_yaw_correcting:
+                    # P kontrolör ile dönüş hızı üret
+                    wz = 1.5 * yaw_err
+                    wz = max(-self.wz_max, min(self.wz_max, wz))
+                    
+                    # Sapma 30 dereceden büyükse ilerlemeyi durdur (hover & turn)
+                    if abs(yaw_err) > math.radians(30):
+                        vx_body = 0.0
+                        vy_body = 0.0
+            else:
+                # Dururken/hedefe yaklaşırken: Nav2'nin kendi yaw komutunu kullan (hedef açısı hizalaması için)
+                if abs(cmd.angular.z) > 0.02:
+                    wz = max(-self.wz_max, min(self.wz_max, cmd.angular.z))
+                else:
+                    wz = 0.0
+
+            # Hız limitleme (Maksimum hızları aşma)
+            vx_body = max(-self.vx_max, min(self.vx_max, vx_body))
+            vy_body = max(-self.vy_max, min(self.vy_max, vy_body))
 
             # Body FLU → NED world frame dönüşümü (doğrudan)
             #

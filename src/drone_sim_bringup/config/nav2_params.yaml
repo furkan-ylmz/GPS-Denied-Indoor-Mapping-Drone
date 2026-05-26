@@ -28,8 +28,8 @@ controller_server:
     # İlerleme Kontrolcüsü (Dronun bir yere sıkışıp sıkışmadığını anlar)
     progress_checker:
       plugin: "nav2_controller::SimpleProgressChecker"
-      required_movement_radius: 0.5   # 10 saniye içinde en az 0.5 metre hareket edemezse "sıkıştım" der
-      movement_time_allowance: 10.0
+      required_movement_radius: 0.5   # 15 saniye içinde en az 0.5 metre hareket edemezse "sıkıştım" der
+      movement_time_allowance: 15.0   # Hedefe ilk dönüş sırasında timeout olmaması için 10→15 saniye
 
     # Hedefe Ulaşım Kontrolcüsü (Hedefe vardığını nasıl anlayacak?)
     goal_checker:
@@ -41,29 +41,29 @@ controller_server:
     # MPPI Kontrolcüsü (Model Predictive Path Integral) - Ana Uçuş Algoritması
     FollowPath:
       plugin: "nav2_mppi_controller::MPPIController"
-      time_steps: 30                  # Geleceğe yönelik 30 adım (30 * 0.05s = 1.5 saniye) sonrasını tahmin eder
+      time_steps: 40                  # Geleceğe yönelik 40 adım (40 * 0.05s = 2.0 saniye) sonrasını tahmin eder (Hızlı uçuş için daha uzun öngörü)
       model_dt: 0.05                  # Tahmin adımlarının süresi
       batch_size: 500                 # Saniyede 20 kere, her seferinde rastgele 500 farklı uçuş rotası ihtimali hesaplar
       iteration_count: 1
-      temperature: 0.3                # Bu değer ne kadar düşükse, dron en güvenli ve düz olan tek rotaya o kadar sadık kalır
+      temperature: 0.35               # Biraz daha cesur rota seçimi (0.3→0.35), düz yolda daha kararlı hızlanır
       gamma: 0.015
       motion_model: "Omni"            # KRİTİK: Dronun sağa-sola, ileri-geri her yöne dönebilmesini sağlayan model
       visualize: false                # RViz'de o 500 rotayı çizmesini kapatır (Açıksa CPU'yu bitirir)
-      prune_distance: 1.7
+      prune_distance: 3.0             # Daha ilerideki yol noktalarını da hesaba katır (1.7→3.0, hızlı uçuşta önemli)
       transform_tolerance: 0.1
       retry_attempt_limit: 1
 
       # Uçuş Hız Limitleri (m/s)
-      vx_max: 1.2                     # Maksimum İleri hızı
-      vx_min: -1.2                    # Maksimum Geri hızı (Omni olduğu için eksi değer alabilir)
-      vy_max: 1.2                     # Maksimum Sağ/Sol yana kayma hızı
+      vx_max: 2.0                     # Maksimum İleri hızı (1.2→2.0 m/s, düz yolda daha hızlı süzülür)
+      vx_min: -1.0                    # MPPI planlama için geri hıza izin ver (autonomous.py'de geri gitme dönüşe çevrilir)
+      vy_max: 1.5                     # Maksimum Sağ/Sol yana kayma hızı (1.2→1.5)
       wz_max: 1.5                     # Maksimum kendi etrafında dönme (Yaw) hızı (rad/s)
 
       # İvme Limitleri (m/s²) - Kalkış ve duruşların yumuşaklığı
-      ax_max: 1.5
-      ax_min: -1.5
-      ay_max: 1.5
-      ay_min: -1.5
+      ax_max: 2.5                     # Daha hızlı ivmelenme (1.5→2.5, dönüşten çıkınca hızlı toparlanır)
+      ax_min: -2.5                    # Daha sert frenleme (1.5→2.5)
+      ay_max: 2.0                     # Yana ivmelenme (1.5→2.0)
+      ay_min: -2.0
       az_max: 2.0
 
       # Rastgelelik (Örnekleme) Yayılımları - Dronun yapacağı küçük hareket arayışlarının şiddeti
@@ -111,14 +111,14 @@ controller_server:
       # 4. Hedef Açısı Jürisi
       GoalAngleCritic:
         enabled: true
-        cost_weight: 3.0              # Hedefe varıldığında dronun burnunun doğru yöne bakmasını sağlar
+        cost_weight: 5.0              # Hedefe dönüş davranışını güçlendirir (3.0→5.0). İlk hedef alındığında ve hedefe yaklaşırken burnu hedefe çevirir
         cost_power: 1
         threshold_to_consider: 0.5
 
       # 5. Yola Hizalama Jürisi
       PathAlignCritic:
         enabled: true
-        cost_weight: 14.0             # Dronun global (A*) çizgi üzerinden çıkmasını engeller, yola yapıştırır
+        cost_weight: 10.0             # Yola bağlılık (14→10), akıcı hız ve yol sadakatinin dengesi
         cost_power: 1
         max_path_occupancy_ratio: 0.05
         threshold_to_consider: 0.5
