@@ -14,13 +14,16 @@ trap cleanup SIGINT SIGTERM
 echo "Eski süreçler temizleniyor..."
 killall px4 ruby gz MicroXRCEAgent ros2 rtabmap python3 2>/dev/null
 
-PROJECT_DIR="/home/furkan/drone_project"
+# Get the absolute path of the workspace root (one level up from this script)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 
 # ROS ve Workspace env
 source /opt/ros/jazzy/setup.bash
 source ${PROJECT_DIR}/install/setup.bash
 
-export GZ_SIM_RESOURCE_PATH="${PROJECT_DIR}/models:${PROJECT_DIR}/worlds:/home/furkan/PX4-Autopilot/Tools/simulation/gz/models:/home/furkan/PX4-Autopilot/Tools/simulation/gz/worlds"
+PX4_DIR="${HOME}/PX4-Autopilot"
+export GZ_SIM_RESOURCE_PATH="${PROJECT_DIR}/models:${PROJECT_DIR}/worlds:${PX4_DIR}/Tools/simulation/gz/models:${PX4_DIR}/Tools/simulation/gz/worlds"
 
 # Snap (VS Code) ortam değişkenlerinin Gazebo GUI'sini bozmasını engellemek için temizliyoruz
 unset GTK_PATH GIO_MODULE_DIR LOCPATH GSETTINGS_SCHEMA_DIR XDG_DATA_HOME
@@ -47,7 +50,7 @@ done
 echo "Gazebo hazır."
 
 echo "PX4 başlatılıyor..."
-cd /home/furkan/PX4-Autopilot
+cd "${PX4_DIR}"
 export PX4_GZ_NO_FOLLOW=1
 export PX4_GZ_MODEL=x500_lidar
 export PX4_GZ_MODEL_POSE="10.00,-2.00,0.62,0,0,0"
