@@ -6,17 +6,36 @@ cleanup() {
     killall -2 rtabmap 2>/dev/null
     sleep 3
     echo "Diğer süreçler sonlandırılıyor..."
-    killall px4 ruby gz MicroXRCEAgent ros2 python3 2>/dev/null
+    killall px4 ruby gz MicroXRCEAgent ros2 rviz2 python3 2>/dev/null
     exit 0
 }
 trap cleanup SIGINT SIGTERM
 
 echo "Eski süreçler temizleniyor..."
-killall px4 ruby gz MicroXRCEAgent ros2 rtabmap python3 2>/dev/null
+killall px4 ruby gz MicroXRCEAgent ros2 rtabmap rviz2 python3 2>/dev/null
 
 # Get the absolute path of the workspace root (one level up from this script)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
+ENABLE_OCR="${ENABLE_OCR:-false}"
+for arg in "$@"; do
+    case "${arg}" in
+        ocr|--ocr)
+            ENABLE_OCR=true
+            ;;
+        no-ocr|--no-ocr)
+            ENABLE_OCR=false
+            ;;
+        *)
+            echo "Bilinmeyen arguman: ${arg}"
+            echo "Kullanim: $0 [ocr|--ocr]"
+            exit 1
+            ;;
+    esac
+done
+OCR_IMAGE_TOPIC="${OCR_IMAGE_TOPIC:-/camera}"
+OCR_MAP_JSON_PATH="${OCR_MAP_JSON_PATH:-${PROJECT_DIR}/src/door_ocr/docs/door_labels.json}"
+mkdir -p "${PROJECT_DIR}/logs" "$(dirname "${OCR_MAP_JSON_PATH}")"
 
 # ROS ve Workspace env
 source /opt/ros/jazzy/setup.bash
@@ -34,10 +53,15 @@ gz sim "${PROJECT_DIR}/worlds/test_building.sdf" > ${PROJECT_DIR}/logs/gazebo.lo
 
 echo "=========================================================="
 echo "Sistem ROS 2 Launch üzerinden arka planda başlatılıyor..."
+echo "OCR modu: ${ENABLE_OCR}"
 echo "=========================================================="
 
 # Tüm arka plan düğümlerini (Simülasyon, SLAM, Bridge, TF, RViz) launch ile başlatıyoruz
-ros2 launch drone_sim_bringup bringup.launch.py autonomous:=false &
+ros2 launch drone_sim_bringup bringup.launch.py \
+  autonomous:=false \
+  "ocr:=${ENABLE_OCR}" \
+  "ocr_image_topic:=${OCR_IMAGE_TOPIC}" \
+  "ocr_map_json_path:=${OCR_MAP_JSON_PATH}" &
 LAUNCH_PID=$!
 
 echo "Gazebo'nun hazır olması bekleniyor..."

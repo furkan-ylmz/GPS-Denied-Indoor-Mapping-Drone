@@ -14,6 +14,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPo
 from px4_msgs.msg import VehicleOdometry
 from tf2_ros import TransformBroadcaster
 from geometry_msgs.msg import TransformStamped
+from nav_msgs.msg import Odometry
 import math
 
 SQRT2_2 = math.sqrt(2.0) / 2.0
@@ -47,6 +48,7 @@ class PX4TfBroadcaster(Node):
     def __init__(self):
         super().__init__('px4_tf_broadcaster')
         self.tf_broadcaster = TransformBroadcaster(self)
+        self.odom_pub = self.create_publisher(Odometry, '/drone/odom', 10)
         self.msg_count = 0
 
         qos_profile = QoSProfile(
@@ -91,9 +93,18 @@ class PX4TfBroadcaster(Node):
 
         self.tf_broadcaster.sendTransform(t)
 
+        odom = Odometry()
+        odom.header = t.header
+        odom.child_frame_id = t.child_frame_id
+        odom.pose.pose.position.x = t.transform.translation.x
+        odom.pose.pose.position.y = t.transform.translation.y
+        odom.pose.pose.position.z = t.transform.translation.z
+        odom.pose.pose.orientation = t.transform.rotation
+        self.odom_pub.publish(odom)
+
         self.msg_count += 1
         if self.msg_count == 1:
-            self.get_logger().info('✅ İlk odom->base_link TF yayınlandı!')
+            self.get_logger().info('✅ İlk odom->base_link TF ve /drone/odom yayınlandı!')
 
 
 def main(args=None):

@@ -7,6 +7,18 @@ from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch.conditions import IfCondition
 
+
+def _default_ocr_map_json_path():
+    launch_dir = os.path.dirname(os.path.realpath(__file__))
+    current = launch_dir
+    for _ in range(6):
+        candidate = os.path.join(current, 'src', 'door_ocr', 'docs')
+        if os.path.isdir(candidate):
+            return os.path.join(candidate, 'door_labels.json')
+        current = os.path.dirname(current)
+    return os.path.expanduser('~/drone_project/src/door_ocr/docs/door_labels.json')
+
+
 def generate_launch_description():
     home_dir = os.path.expanduser('~')
     project_dir = os.path.join(home_dir, 'drone_project')
@@ -30,6 +42,26 @@ def generate_launch_description():
         'autonomous',
         default_value='true',
         description='Whether to launch autonomous navigation nodes (Nav2 and Drone Navigator)'
+    )
+    ocr_arg = DeclareLaunchArgument(
+        'ocr',
+        default_value='false',
+        description='Whether to launch door OCR nodes'
+    )
+    ocr_image_topic_arg = DeclareLaunchArgument(
+        'ocr_image_topic',
+        default_value='/camera',
+        description='Camera image topic consumed by door OCR'
+    )
+    ocr_enable_semantic_mapper_arg = DeclareLaunchArgument(
+        'ocr_enable_semantic_mapper',
+        default_value='true',
+        description='Whether OCR should persist confirmed labels and publish RViz markers'
+    )
+    ocr_map_json_path_arg = DeclareLaunchArgument(
+        'ocr_map_json_path',
+        default_value=_default_ocr_map_json_path(),
+        description='JSON output path for confirmed OCR door labels'
     )
 
     # 2. Gazebo Simulator
@@ -81,6 +113,7 @@ def generate_launch_description():
 
     # Package directories
     bringup_dir = get_package_share_directory('drone_sim_bringup')
+    door_ocr_dir = get_package_share_directory('door_ocr')
 
     # 6. RTAB-Map
     rtabmap_params_file = os.path.join(bringup_dir, 'config', 'rtabmap_params.yaml')
@@ -139,13 +172,35 @@ def generate_launch_description():
         output='screen'
     )
 
+    # 10. Door OCR (opsiyonel)
+    door_ocr_launch = IncludeLaunchDescription(
+        PythonLaunchDescriptionSource(
+            os.path.join(door_ocr_dir, 'launch', 'ocr.launch.py')
+        ),
+        launch_arguments={
+            'image_topic': LaunchConfiguration('ocr_image_topic'),
+            'enable_semantic_mapper': LaunchConfiguration('ocr_enable_semantic_mapper'),
+            'map_json_path': LaunchConfiguration('ocr_map_json_path'),
+            'use_sim_time': 'true',
+        }.items(),
+        condition=IfCondition(LaunchConfiguration('ocr'))
+    )
+
     return LaunchDescription([
         autonomous_arg,
+        ocr_arg,
+        ocr_image_topic_arg,
+        ocr_enable_semantic_mapper_arg,
+        ocr_map_json_path_arg,
         micro_dds_agent,
         # 2 saniye sonra: Temel altyapı (Bridge, TF, SLAM, RViz)
         TimerAction(period=2.0, actions=[
             gz_bridge, px4_tf, static_tf_lidar, static_tf_camera,
             rtabmap_node, rviz_node
+        ]),
+        # 4 saniye sonra: OCR, kamera bridge ve odom yayını hazır olduktan sonra başlar
+        TimerAction(period=4.0, actions=[
+            door_ocr_launch
         ]),
         # 8 saniye sonra: Nav2 ve Autonomous (RTAB-Map'in /map üretmesini bekle)
         TimerAction(period=8.0, actions=[
