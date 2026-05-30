@@ -213,28 +213,29 @@ class DroneNavigator(Node):
             vx_body = raw_vx
             vy_body = raw_vy
             wz = 0.0
+            yaw_err = 0.0  # NameError hatasını önlemek için varsayılan tanım
 
-            if speed > 0.15:
+            if speed > 0.02:
                 # Hareket halindeyken hız vektörü açısını hesapla (body frame'de yaw hatası)
                 yaw_err = math.atan2(raw_vy, raw_vx)
                 
                 # Histerezis durum geçişleri
                 if not self.is_yaw_correcting:
-                    # Sapma 30 dereceden büyükse düzeltmeye başla
-                    if abs(yaw_err) > math.radians(30):
+                    # Sapma 45 dereceden büyükse düzeltmeye başla
+                    if abs(yaw_err) > math.radians(45):
                         self.is_yaw_correcting = True
                 else:
-                    # Sapma 10 derecenin altına inince düzeltmeyi durdur
-                    if abs(yaw_err) < math.radians(10):
+                    # Sapma 3 derecenin altına inince düzeltmeyi durdur
+                    if abs(yaw_err) < math.radians(3):
                         self.is_yaw_correcting = False
 
                 if self.is_yaw_correcting:
-                    # P kontrolör ile dönüş hızı üret
-                    wz = 1.5 * yaw_err
+                    # P kontrolör ile dönüş hızı üret (Dur ve yerinde dön)
+                    wz = 1.0 * yaw_err
                     wz = max(-self.wz_max, min(self.wz_max, wz))
                     
-                    # Sapma 30 dereceden büyükse ilerlemeyi durdur (hover & turn)
-                    if abs(yaw_err) > math.radians(30):
+                    # Sapma 45 dereceden büyükse ilerlemeyi durdur (hover & turn)
+                    if abs(yaw_err) > math.radians(45):
                         vx_body = 0.0
                         vy_body = 0.0
             else:

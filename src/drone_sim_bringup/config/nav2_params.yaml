@@ -230,7 +230,9 @@ local_costmap:
           marking: true               # Lidar ışını bir şeye çarparsa oraya "engel var" işareti koy
           clearing: true              # Lidar ışını boşluktan geçerse o bölgeyi "engel yok" diye temizle
           obstacle_max_range: 3.0     # Dron sadece 3 metreye kadar olan engelleri umursar
+          obstacle_min_range: 0.4     # KRİTİK: Dronun kendi gövdesini ve pervanelerini engel görmemesi için min mesafe (40 cm)
           raytrace_max_range: 4.0     # Dron 4 metreye kadar olan boşlukları tarayıp temizler
+          raytrace_min_range: 0.4     # Kendi gövdesi üzerindeki temizlemeleri filtreler
           max_obstacle_height: 2.0    # 2 Metreden yüksekteki engelleri (tavan vb) umursama
           min_obstacle_height: 0.2    # 20 cm'den alçak engelleri (zemin vb) umursama
           inf_is_valid: false
