@@ -6,6 +6,7 @@ from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import Node
 from launch.conditions import IfCondition
+from launch.substitutions import PythonExpression
 
 def generate_launch_description():
     home_dir = os.path.expanduser('~')
@@ -25,11 +26,24 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 1.5 Declare Launch Argument for autonomous mode
-    autonomous_arg = DeclareLaunchArgument(
-        'autonomous',
-        default_value='true',
-        description='Whether to launch autonomous navigation nodes (Nav2 and Drone Navigator)'
+    # 1.5 Declare Launch Argument for mode
+    mode_arg = DeclareLaunchArgument(
+        'mode',
+        default_value='autonomous',
+        description='Çalışma modu: autonomous, explore, veya manual'
+    )
+
+    # Koşullar: Nav2 ve autonomous, hem autonomous hem explore modunda başlatılır
+    nav2_condition = IfCondition(
+        PythonExpression([
+            "'", LaunchConfiguration('mode'), "' == 'autonomous' or '",
+            LaunchConfiguration('mode'), "' == 'explore'"
+        ])
+    )
+    explore_condition = IfCondition(
+        PythonExpression([
+            "'", LaunchConfiguration('mode'), "' == 'explore'"
+        ])
     )
 
     # 2. Gazebo Simulator
@@ -121,34 +135,44 @@ def generate_launch_description():
         output='screen'
     )
 
-    # 8. Nav2 Otonom Navigasyon Stack'i
+    # 8. Nav2 Otonom Navigasyon Stack'i (autonomous ve explore modlarında)
     nav2_launch = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(bringup_dir, 'launch', 'nav2.launch.py')
         ),
-        condition=IfCondition(LaunchConfiguration('autonomous'))
+        condition=nav2_condition
     )
 
-    # 9. Autonomous Bridge (cmd_vel → PX4 köprüsü)
+    # 9. Autonomous Bridge — cmd_vel → PX4 köprüsü (autonomous ve explore modlarında)
     autonomous = Node(
         package='px4_offboard',
         executable='autonomous',
         name='autonomous',
         parameters=[{'use_sim_time': True}],
-        condition=IfCondition(LaunchConfiguration('autonomous')),
+        condition=nav2_condition,
+        output='screen'
+    )
+
+    # 10. Frontier Explorer — Otonom keşif düğümü (sadece explore modunda)
+    explore_node = Node(
+        package='px4_offboard',
+        executable='explore',
+        name='frontier_explorer',
+        parameters=[{'use_sim_time': True}],
+        condition=explore_condition,
         output='screen'
     )
 
     return LaunchDescription([
-        autonomous_arg,
+        mode_arg,
         micro_dds_agent,
         # 2 saniye sonra: Temel altyapı (Bridge, TF, SLAM, RViz)
         TimerAction(period=2.0, actions=[
             gz_bridge, px4_tf, static_tf_lidar, static_tf_camera,
             rtabmap_node, rviz_node
         ]),
-        # 8 saniye sonra: Nav2 ve Autonomous (RTAB-Map'in /map üretmesini bekle)
+        # 8 saniye sonra: Nav2, Autonomous ve Explore (RTAB-Map'in /map üretmesini bekle)
         TimerAction(period=8.0, actions=[
-            nav2_launch, autonomous
+            nav2_launch, autonomous, explore_node
         ]),
     ])

@@ -27,6 +27,7 @@ setup(
             'tf_broadcaster = px4_offboard.tf_broadcaster:main',
             'teleop = px4_offboard.teleop:main',
             'autonomous = px4_offboard.autonomous:main',
+            'explore = px4_offboard.explore:main',
         ],
     },
 )

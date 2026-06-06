@@ -5,7 +5,7 @@ Nav2'nin ürettiği /cmd_vel (Twist) hız komutlarını alıp PX4'ün
 TrajectorySetpoint mesajlarına çeviren ROS 2 düğümü.
 
 Durum Makinesi:
-  IDLE → ARMING → TAKING_OFF → NAVIGATING ↔ HOVERING
+  IDLE → ARMING → TAKING_OFF → NAVIGATING ↔ HOVERING → LANDING
 
 Koordinat Dönüşümü:
   - Nav2 cmd_vel: ENU body frame (base_link) — İleri=x, Sol=y, Yukarı=z
@@ -18,6 +18,7 @@ from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
 from geometry_msgs.msg import Twist
+from std_msgs.msg import String
 from px4_msgs.msg import (
     OffboardControlMode,
     TrajectorySetpoint,
@@ -40,6 +41,7 @@ STATE_ARMING = 1
 STATE_TAKING_OFF = 2
 STATE_NAVIGATING = 3
 STATE_HOVERING = 4
+STATE_LANDING = 5
 
 
 class DroneNavigator(Node):
@@ -76,6 +78,10 @@ class DroneNavigator(Node):
         self.create_subscription(
             Twist, '/cmd_vel', self._cmd_vel_cb, 10)
 
+        # Explore modundan iniş komutu
+        self.create_subscription(
+            String, '/explore/command', self._explore_cmd_cb, 10)
+
         # --- Durum Değişkenleri ---
         self.state = STATE_IDLE
         self.pos = [0.0, 0.0, 0.0]       # Mevcut pozisyon (NED)
@@ -87,6 +93,7 @@ class DroneNavigator(Node):
         self.last_cmd_vel = Twist()
         self.last_cmd_vel_time = None
         self.is_yaw_correcting = False
+        self.home_position = None         # Başlangıç konumu (NED)
 
         # --- Zamanlayıcı (20 Hz heartbeat) ---
         self.timer = self.create_timer(0.05, self._heartbeat)
@@ -120,6 +127,12 @@ class DroneNavigator(Node):
         if not self.armed and old:
             self.get_logger().info('🔴 DISARM edildi')
 
+    def _explore_cmd_cb(self, msg):
+        """Explore modundan gelen komut (LAND)."""
+        if msg.data == 'LAND':
+            self.get_logger().info('🛬 İNİŞ komutu alındı — Explore modundan')
+            self.state = STATE_LANDING
+
     def _cmd_vel_cb(self, msg):
         """Nav2'den gelen hız komutu."""
         self.last_cmd_vel = msg
@@ -141,6 +154,8 @@ class DroneNavigator(Node):
             self._handle_takeoff(ts)
         elif self.state in (STATE_NAVIGATING, STATE_HOVERING):
             self._handle_navigation(ts)
+        elif self.state == STATE_LANDING:
+            self._handle_landing(ts)
 
     def _handle_idle(self, ts):
         """IDLE: Setpoint göndermeye başla, yeterli olunca arm et."""
@@ -184,7 +199,12 @@ class DroneNavigator(Node):
         # Hedef yüksekliğe ulaşıldı mı kontrol et
         alt_error = abs(self.pos[2] - self.takeoff_altitude)
         if alt_error < self.takeoff_threshold and self.armed:
+            # Başlangıç konumunu kaydet (eve dönüş için)
+            self.home_position = [self.pos[0], self.pos[1], self.pos[2]]
             self.get_logger().info('✅ Kalkış tamamlandı — HOVERING durumuna geçiliyor')
+            self.get_logger().info(
+                f'🏠 Başlangıç konumu kaydedildi: '
+                f'({self.pos[0]:.2f}, {self.pos[1]:.2f}, {self.pos[2]:.2f})')
             self.state = STATE_HOVERING
 
     def _handle_navigation(self, ts):
@@ -290,6 +310,29 @@ class DroneNavigator(Node):
             sp.yawspeed = float('nan')
             sp.timestamp = ts
             self.setpoint_pub.publish(sp)
+
+    # ─────────────────────────────────────────────────────────
+    # İniş Kontrolü
+    # ─────────────────────────────────────────────────────────
+
+    def _handle_landing(self, ts):
+        """LANDING: PX4 AUTO.LAND moduna geçir."""
+        # PX4'e AUTO.LAND modu komutu gönder
+        # param1=1.0 (base mode flag), param2=4.0 (PX4_CUSTOM_MAIN_MODE_AUTO),
+        # param7 yerine param2 ve p2 kullanarak: mode AUTO, sub-mode LAND
+        self._send_command(
+            VehicleCommand.VEHICLE_CMD_DO_SET_MODE,
+            p1=1.0, p2=4.0, p7=6.0)
+
+        self.get_logger().info(
+            '🛬 İNİŞ yapılıyor — PX4 AUTO.LAND modu aktif',
+            throttle_duration_sec=3.0)
+
+        # İniş tamamlandığında (disarm olduğunda) bildir
+        if not self.armed and self.home_position is not None:
+            self.get_logger().info('✅ İNİŞ TAMAMLANDI — Dron güvenle indi')
+            # Durumu sabit tut, artık heartbeat sadece log basar
+            self.state = STATE_LANDING  # Aynı durumda kal
 
     # ─────────────────────────────────────────────────────────
     # Yardımcı Metodlar
