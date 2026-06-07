@@ -436,8 +436,8 @@ class FrontierExplorer(Node):
             # Yakın kümeler arasından en büyüğünü seç (yerel alanı bitir)
             best = max(nearby, key=lambda c: c['size'])
         else:
-            # Tüm kümeler uzak — skor = boyut / mesafe
-            best = max(candidates, key=lambda c: c['size'] / (c['distance'] + 0.1))
+            # Tüm kümeler uzak — skor = boyut / (mesafe^2)
+            best = max(candidates, key=lambda c: c['size'] / (c['distance'] ** 2 + 0.1))
 
         self.get_logger().info(
             f'  Seçilen küme: hedef=({best["goal"][0]:.2f}, {best["goal"][1]:.2f}), '
