@@ -102,6 +102,8 @@ class FrontierExplorer(Node):
             MarkerArray, '/explore/frontiers', 10)
         self.target_pub = self.create_publisher(
             MarkerArray, '/explore/target', 10)
+        self.active_goal_pub = self.create_publisher(
+            PoseStamped, '/explore/active_goal', 10)
 
         # --- Nav2 Action Client ---
         self.nav2_client = ActionClient(
@@ -465,6 +467,15 @@ class FrontierExplorer(Node):
         goal_msg.pose.pose.orientation.w = 1.0
 
         self.goal_active = True
+        
+        # Aktif hedefi autonomous.py'ye bildir
+        active_msg = PoseStamped()
+        active_msg.header.frame_id = 'map'
+        active_msg.header.stamp = self.get_clock().now().to_msg()
+        active_msg.pose.position.x = float(x)
+        active_msg.pose.position.y = float(y)
+        self.active_goal_pub.publish(active_msg)
+
         send_goal_future = self.nav2_client.send_goal_async(
             goal_msg, feedback_callback=self._nav2_feedback_cb)
         send_goal_future.add_done_callback(self._nav2_goal_response_cb)
@@ -476,6 +487,7 @@ class FrontierExplorer(Node):
         if not goal_handle.accepted:
             self.get_logger().warn('❌ Nav2 hedefi reddetti')
             self.goal_active = False
+            self._clear_active_goal()
             if self.current_target:
                 self._add_to_blacklist(
                     self.current_target[0], self.current_target[1])
@@ -521,6 +533,7 @@ class FrontierExplorer(Node):
                     self.current_target[0], self.current_target[1])
 
         self.current_target = None
+        self._clear_active_goal()
 
     def _send_goal_to_home(self):
         """Başlangıç konumunu Nav2 hedefi olarak gönder."""
@@ -533,6 +546,15 @@ class FrontierExplorer(Node):
             f'{self.home_position[1]:.2f})')
         self.current_target = self.home_position
         self._send_nav2_goal(self.home_position[0], self.home_position[1])
+
+    def _clear_active_goal(self):
+        """Yayınlanan aktif hedefi temizler (NaN)."""
+        msg = PoseStamped()
+        msg.header.frame_id = 'map'
+        msg.header.stamp = self.get_clock().now().to_msg()
+        msg.pose.position.x = float('nan')
+        msg.pose.position.y = float('nan')
+        self.active_goal_pub.publish(msg)
 
     # ─────────────────────────────────────────────────────────
     # Kara Liste Yönetimi

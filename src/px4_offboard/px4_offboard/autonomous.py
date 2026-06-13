@@ -17,7 +17,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
-from geometry_msgs.msg import Twist
+from geometry_msgs.msg import Twist, PoseStamped
 from std_msgs.msg import String
 from px4_msgs.msg import (
     OffboardControlMode,
@@ -82,6 +82,10 @@ class DroneNavigator(Node):
         self.create_subscription(
             String, '/explore/command', self._explore_cmd_cb, 10)
 
+        # Explore modundan aktif hedef bilgisi
+        self.create_subscription(
+            PoseStamped, '/explore/active_goal', self._active_goal_cb, 10)
+
         # --- Durum Değişkenleri ---
         self.state = STATE_IDLE
         self.pos = [0.0, 0.0, 0.0]       # Mevcut pozisyon (NED)
@@ -94,6 +98,7 @@ class DroneNavigator(Node):
         self.last_cmd_vel_time = None
         self.is_yaw_correcting = False
         self.home_position = None         # Başlangıç konumu (NED)
+        self.active_goal = None           # [x, y] aktif hedef (map/ENU)
 
         # --- Zamanlayıcı (20 Hz heartbeat) ---
         self.timer = self.create_timer(0.05, self._heartbeat)
@@ -132,6 +137,13 @@ class DroneNavigator(Node):
         if msg.data == 'LAND':
             self.get_logger().info('🛬 İNİŞ komutu alındı — Explore modundan')
             self.state = STATE_LANDING
+
+    def _active_goal_cb(self, msg):
+        """Explore modundan gelen aktif hedef koordinatı."""
+        if math.isnan(msg.pose.position.x):
+            self.active_goal = None
+        else:
+            self.active_goal = [msg.pose.position.x, msg.pose.position.y]
 
     def _cmd_vel_cb(self, msg):
         """Nav2'den gelen hız komutu."""
@@ -233,19 +245,27 @@ class DroneNavigator(Node):
             vx_body = raw_vx
             vy_body = raw_vy
             wz = 0.0
-            yaw_err = 0.0  # NameError hatasını önlemek için varsayılan tanım
+            yaw_err = 0.0
 
-            if speed > 0.02:
+            # Aktif hedefe yakınlık kontrolü (Süpürme fazı çakışmasını önlemek için)
+            is_near_goal = False
+            if self.active_goal is not None:
+                rx_enu = self.pos[1]  # East
+                ry_enu = self.pos[0]  # North
+                gx, gy = self.active_goal
+                dist = math.sqrt((rx_enu - gx)**2 + (ry_enu - gy)**2)
+                if dist < 0.45:  # Hedefe 45 cm kala süpürme/hizalanma aşaması başlar
+                    is_near_goal = True
+
+            if speed > 0.02 and not is_near_goal:
                 # Hareket halindeyken hız vektörü açısını hesapla (body frame'de yaw hatası)
                 yaw_err = math.atan2(raw_vy, raw_vx)
                 
-                # Histerezis durum geçişleri
+                # Histerezis durum geçişleri (45° üstünde düzeltmeye başla, 3° altında durdur)
                 if not self.is_yaw_correcting:
-                    # Sapma 45 dereceden büyükse düzeltmeye başla
                     if abs(yaw_err) > math.radians(45):
                         self.is_yaw_correcting = True
                 else:
-                    # Sapma 3 derecenin altına inince düzeltmeyi durdur
                     if abs(yaw_err) < math.radians(3):
                         self.is_yaw_correcting = False
 
@@ -259,7 +279,7 @@ class DroneNavigator(Node):
                         vx_body = 0.0
                         vy_body = 0.0
             else:
-                # Dururken/hedefe yaklaşırken: Nav2'nin kendi yaw komutunu kullan (hedef açısı hizalaması için)
+                # Dururken, hedefe yaklaşırken veya süpürme yaparken: Nav2'nin kendi yaw komutunu kullan
                 if abs(cmd.angular.z) > 0.02:
                     wz = max(-self.wz_max, min(self.wz_max, cmd.angular.z))
                 else:
