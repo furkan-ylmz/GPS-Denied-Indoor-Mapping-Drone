@@ -24,7 +24,7 @@ from rclpy.qos import QoSProfile, ReliabilityPolicy, DurabilityPolicy
 
 from nav_msgs.msg import OccupancyGrid
 from nav2_msgs.action import NavigateToPose
-from geometry_msgs.msg import PoseStamped
+from geometry_msgs.msg import PoseStamped, Twist
 from std_msgs.msg import String
 from visualization_msgs.msg import Marker, MarkerArray
 
@@ -36,6 +36,7 @@ STATE_INITIALIZING = 1
 STATE_EXPLORING = 2
 STATE_RETURNING_HOME = 3
 STATE_COMPLETED = 4
+STATE_SWEEPING = 5
 
 # OccupancyGrid hücre değerleri
 CELL_FREE = 0
@@ -55,7 +56,7 @@ class FrontierExplorer(Node):
         super().__init__('frontier_explorer')
 
         # --- ROS2 Parametreleri ---
-        self.declare_parameter('min_frontier_size', 5)
+        self.declare_parameter('min_frontier_size', 15)
         self.declare_parameter('nearby_threshold', 2.0)
         self.declare_parameter('min_goal_distance', 0.8)
         self.declare_parameter('map_update_interval', 1.0)
@@ -63,6 +64,8 @@ class FrontierExplorer(Node):
         self.declare_parameter('blacklist_radius', 1.0)
         self.declare_parameter('home_tolerance', 0.5)
         self.declare_parameter('init_wait_time', 10.0)
+        self.declare_parameter('sweep_angle', 200.0)      # Süpürme açısı (Derece)
+        self.declare_parameter('sweep_speed', 0.6)        # Süpürme hızı (rad/s)
 
         self.min_frontier_size = self.get_parameter('min_frontier_size').value
         self.nearby_threshold = self.get_parameter('nearby_threshold').value
@@ -72,6 +75,8 @@ class FrontierExplorer(Node):
         self.blacklist_radius = self.get_parameter('blacklist_radius').value
         self.home_tolerance = self.get_parameter('home_tolerance').value
         self.init_wait_time = self.get_parameter('init_wait_time').value
+        self.sweep_angle = math.radians(self.get_parameter('sweep_angle').value)
+        self.sweep_speed = self.get_parameter('sweep_speed').value
 
         # --- Durum Değişkenleri ---
         self.state = STATE_WAITING_FOR_MAP
@@ -83,6 +88,9 @@ class FrontierExplorer(Node):
         self.goal_handle = None         # Mevcut Nav2 goal handle
         self.current_target = None      # Mevcut hedef (x, y)
         self.current_target_cluster = None  # Görselleştirme için seçilen küme
+        self.sweep_accumulated_yaw = 0.0
+        self.last_yaw = None
+        self.sweep_timer = None
 
         # --- TF2 ---
         self.tf_buffer = tf2_ros.Buffer()
@@ -104,6 +112,8 @@ class FrontierExplorer(Node):
             MarkerArray, '/explore/target', 10)
         self.active_goal_pub = self.create_publisher(
             PoseStamped, '/explore/active_goal', 10)
+        self.cmd_vel_pub = self.create_publisher(
+            Twist, '/cmd_vel', 10)
 
         # --- Nav2 Action Client ---
         self.nav2_client = ActionClient(
@@ -119,6 +129,8 @@ class FrontierExplorer(Node):
         self.get_logger().info(f'  min_goal_distance: {self.min_goal_distance}m')
         self.get_logger().info(f'  init_wait_time: {self.init_wait_time}s')
         self.get_logger().info(f'  goal_timeout: {self.goal_timeout}s')
+        self.get_logger().info(f'  sweep_angle: {math.degrees(self.sweep_angle):.1f}°')
+        self.get_logger().info(f'  sweep_speed: {self.sweep_speed} rad/s')
 
     # ─────────────────────────────────────────────────────────
     # Callback'ler
@@ -502,14 +514,13 @@ class FrontierExplorer(Node):
 
     def _nav2_feedback_cb(self, feedback_msg):
         """Nav2 navigasyon ilerleme geri bildirimi."""
-        pass  # İlerleme bilgisi şu an için kullanılmıyor
+        pass
 
     def _nav2_result_cb(self, future):
         """Nav2 navigasyon sonucu."""
         result = future.result()
         status = result.status
 
-        self.goal_active = False
         self.goal_handle = None
 
         # ActionGoalStatus: SUCCEEDED=4, ABORTED=6, CANCELED=5
@@ -517,23 +528,34 @@ class FrontierExplorer(Node):
             self.get_logger().info(
                 f'✅ Hedefe ulaşıldı: ({self.current_target[0]:.2f}, '
                 f'{self.current_target[1]:.2f})')
-        elif status == 6:  # ABORTED
-            self.get_logger().warn(
-                f'⚠️ Hedefe ulaşılamadı (ABORTED): ({self.current_target[0]:.2f}, '
-                f'{self.current_target[1]:.2f})')
-            if self.current_target:
-                self._add_to_blacklist(
-                    self.current_target[0], self.current_target[1])
-        elif status == 5:  # CANCELED
-            self.get_logger().info('🚫 Hedef iptal edildi')
+            
+            if self.state == STATE_EXPLORING:
+                # Otonom keşif sırasındaki hedef ise kontrollü yaw süpürmesini tetikle
+                self._start_sweep_timer()
+            else:
+                # Eve dönüş vb. durumlarda süpürme yapmadan bitir
+                self.goal_active = False
+                self.current_target = None
+                self._clear_active_goal()
         else:
-            self.get_logger().warn(f'⚠️ Beklenmeyen hedef durumu: {status}')
-            if self.current_target:
-                self._add_to_blacklist(
-                    self.current_target[0], self.current_target[1])
+            if status == 6:  # ABORTED
+                self.get_logger().warn(
+                    f'⚠️ Hedefe ulaşılamadı (ABORTED): ({self.current_target[0]:.2f}, '
+                    f'{self.current_target[1]:.2f})')
+                if self.current_target:
+                    self._add_to_blacklist(
+                        self.current_target[0], self.current_target[1])
+            elif status == 5:  # CANCELED
+                self.get_logger().info('🚫 Hedef iptal edildi')
+            else:
+                self.get_logger().warn(f'⚠️ Beklenmeyen hedef durumu: {status}')
+                if self.current_target:
+                    self._add_to_blacklist(
+                        self.current_target[0], self.current_target[1])
 
-        self.current_target = None
-        self._clear_active_goal()
+            self.goal_active = False
+            self.current_target = None
+            self._clear_active_goal()
 
     def _send_goal_to_home(self):
         """Başlangıç konumunu Nav2 hedefi olarak gönder."""
@@ -585,6 +607,93 @@ class FrontierExplorer(Node):
         msg.data = 'LAND'
         self.command_pub.publish(msg)
         self.get_logger().info('🛬 İNİŞ komutu gönderildi → /explore/command')
+
+    # ─────────────────────────────────────────────────────────
+    # Kontrollü Yaw Süpürme (Custom Yaw Sweep)
+    # ─────────────────────────────────────────────────────────
+
+    def _get_robot_yaw(self):
+        """TF2 ile dronun map frame'deki anlık yaw açısını al."""
+        try:
+            transform = self.tf_buffer.lookup_transform(
+                'map', 'base_link', rclpy.time.Time(),
+                timeout=rclpy.duration.Duration(seconds=1.0))
+            q = transform.transform.rotation
+            # Quaternion'dan yaw açısını hesapla
+            siny_cosp = 2 * (q.w * q.z + q.x * q.y)
+            cosy_cosp = 1 - 2 * (q.y * q.y + q.z * q.z)
+            yaw = math.atan2(siny_cosp, cosy_cosp)
+            return yaw
+        except Exception as e:
+            self.get_logger().debug(f'Yaw TF hatası: {e}')
+            return None
+
+    def _start_sweep_timer(self):
+        """Süpürme döngüsünü 10 Hz (0.1s) ile başlatır."""
+        self.sweep_accumulated_yaw = 0.0
+        self.last_yaw = self._get_robot_yaw()
+        self.state = STATE_SWEEPING
+        
+        # Varsa eski timer'ı temizle
+        if hasattr(self, 'sweep_timer') and self.sweep_timer is not None:
+            self.sweep_timer.destroy()
+            
+        self.sweep_timer = self.create_timer(0.1, self._sweep_loop)
+        self.get_logger().info('🔄 Sabit hızlı süpürme (yaw sweep) başlatıldı...')
+
+    def _stop_sweep_timer(self):
+        """Süpürme döngüsünü durdurur."""
+        if hasattr(self, 'sweep_timer') and self.sweep_timer is not None:
+            self.sweep_timer.destroy()
+            self.sweep_timer = None
+
+    def _sweep_loop(self):
+        """Dronun kendi etrafında sabit hızla dönmesini ve açıyı takip etmesini sağlar."""
+        if self.state != STATE_SWEEPING:
+            self._stop_sweep_timer()
+            return
+
+        current_yaw = self._get_robot_yaw()
+        if current_yaw is None:
+            return
+
+        if self.last_yaw is not None:
+            # Açısal farkı hesapla ve -pi ile +pi arasında normalize et (wrap-around)
+            diff = current_yaw - self.last_yaw
+            diff = (diff + math.pi) % (2 * math.pi) - math.pi
+            self.sweep_accumulated_yaw += abs(diff)
+
+        self.last_yaw = current_yaw
+
+        # Hedeflenen açıya (200 derece) ulaşıldı mı?
+        if self.sweep_accumulated_yaw >= self.sweep_angle:
+            self.get_logger().info(
+                f'✅ Süpürme tamamlandı: {math.degrees(self.sweep_accumulated_yaw):.1f}° döndü')
+            self._stop_sweep_timer()
+            
+            # Durmak için sıfır hız gönder
+            self._publish_cmd_vel(0.0)
+            
+            # Eski duruma geri dön
+            self.state = STATE_EXPLORING
+            self.goal_active = False
+            self.current_target = None
+            self._clear_active_goal()
+            return
+
+        # Dönen cmd_vel yayınla
+        self._publish_cmd_vel(self.sweep_speed)
+
+    def _publish_cmd_vel(self, wz):
+        """cmd_vel üzerine açısal dönüş hızını yayınlar."""
+        msg = Twist()
+        msg.linear.x = 0.0
+        msg.linear.y = 0.0
+        msg.linear.z = 0.0
+        msg.angular.x = 0.0
+        msg.angular.y = 0.0
+        msg.angular.z = float(wz)
+        self.cmd_vel_pub.publish(msg)
 
     # ─────────────────────────────────────────────────────────
     # Robot Konumu (TF2)
