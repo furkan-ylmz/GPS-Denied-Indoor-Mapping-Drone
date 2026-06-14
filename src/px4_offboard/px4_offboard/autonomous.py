@@ -53,8 +53,8 @@ class DroneNavigator(Node):
         # --- Parametreler ---
         self.target_altitude = -1.5       # NED (negatif = yukarı) → 1.5m yükseklik
         self.takeoff_altitude = -1.5      # Kalkış hedef yüksekliği (NED)
-        self.vx_max = 2.0                 # Maks ileri hızı (m/s) — nav2_params.yaml ile senkron
-        self.vy_max = 1.5                 # Maks yana hız (m/s) — nav2_params.yaml ile senkron
+        self.vx_max = 3.0                 # Maks ileri hızı (m/s) — nav2_params.yaml ile senkron
+        self.vy_max = 2.2                 # Maks yana hız (m/s) — nav2_params.yaml ile senkron
         self.wz_max = 0.785               # Maks açısal hız (~45°/s) — Odometriyi bozmayan yumuşak dönüş
         self.yaw_deadband = 0.10          # ~6°/s'den küçük açısal hızları yoksay (titreşim filtresi, gerçek dönüşleri geçirir)
         self.cmd_vel_timeout = 0.5        # cmd_vel mesaj zaman aşımı (saniye)
