@@ -66,6 +66,10 @@ class FrontierExplorer(Node):
         self.declare_parameter('init_wait_time', 10.0)
         self.declare_parameter('sweep_angle', 200.0)      # Süpürme açısı (Derece)
         self.declare_parameter('sweep_speed', 0.6)        # Süpürme hızı (rad/s)
+        self.declare_parameter('proximity_stuck_timeout', 8.0)
+        self.declare_parameter('physical_stuck_timeout', 12.0)
+        self.declare_parameter('proximity_stuck_threshold', 2.5)
+        self.declare_parameter('physical_stuck_displacement', 0.40)
 
         self.min_frontier_size = self.get_parameter('min_frontier_size').value
         self.nearby_threshold = self.get_parameter('nearby_threshold').value
@@ -77,12 +81,22 @@ class FrontierExplorer(Node):
         self.init_wait_time = self.get_parameter('init_wait_time').value
         self.sweep_angle = math.radians(self.get_parameter('sweep_angle').value)
         self.sweep_speed = self.get_parameter('sweep_speed').value
+        self.proximity_stuck_timeout = self.get_parameter('proximity_stuck_timeout').value
+        self.physical_stuck_timeout = self.get_parameter('physical_stuck_timeout').value
+        self.proximity_stuck_threshold = self.get_parameter('proximity_stuck_threshold').value
+        self.physical_stuck_displacement = self.get_parameter('physical_stuck_displacement').value
 
         # --- Durum Değişkenleri ---
         self.state = STATE_WAITING_FOR_MAP
         self.home_position = None       # (x, y) başlangıç konumu
         self.current_map = None         # Son alınan OccupancyGrid
         self.blacklisted_goals = []     # Başarısız hedefler listesi
+
+        # --- Sıkışma/İlerleme Denetim Değişkenleri ---
+        self._nav_start_time = None
+        self._last_progress_time = None
+        self._min_dist_to_goal = None
+        self._position_history = deque(maxlen=15)
         self.init_start_time = None     # Bekleme başlangıç zamanı
         self.goal_active = False        # Nav2 hedefi aktif mi?
         self.goal_handle = None         # Mevcut Nav2 goal handle
@@ -192,8 +206,9 @@ class FrontierExplorer(Node):
 
     def _handle_exploring(self):
         """Frontier tespit et, küme seç, hedefe git."""
-        # Nav2 hedefi aktifse bekle
+        # Nav2 hedefi aktifse bekle ve sıkışma/ilerleme denetimi yap
         if self.goal_active:
+            self._check_navigation_progress()
             return
 
         if self.current_map is None:
@@ -280,6 +295,94 @@ class FrontierExplorer(Node):
             self.get_logger().info(
                 f'🏠 Eve dönüş tekrar deneniyor (mesafe: {dist:.2f}m)')
             self._send_goal_to_home()
+
+    def _check_navigation_progress(self):
+        """Mevcut hedefe doğru ilerlemeyi denetler. 
+        Eğer dron hedefe yakınlaşamıyor ve sıkışmışsa hedefi iptal eder ve kara listeye ekler.
+        """
+        if not self.goal_active or self.current_target is None:
+            return
+
+        robot_pos = self._get_robot_position()
+        if robot_pos is None:
+            return
+
+        current_time = self.get_clock().now()
+        
+        # Hedefe olan anlık mesafe
+        dist_to_goal = math.sqrt(
+            (self.current_target[0] - robot_pos[0]) ** 2 +
+            (self.current_target[1] - robot_pos[1]) ** 2)
+
+        # Değişkenleri ilklendir
+        if self._last_progress_time is None:
+            self._nav_start_time = current_time
+            self._last_progress_time = current_time
+            self._min_dist_to_goal = dist_to_goal
+            self._position_history.clear()
+
+        # Konum geçmişini güncelle (her saniye çağrılır)
+        self._position_history.append(robot_pos)
+
+        # 1. Aşama: Hedefe yakınken sıkışma tespiti (Proximity-based stuck detection)
+        # Hedefe 2.5 metreden daha yakınsak ve 8 saniyedir anlamlı bir şekilde (< 10 cm)
+        # hedefe daha fazla yaklaşamadıysak engel tarafından engellendiğimizi varsay.
+        if dist_to_goal < self.proximity_stuck_threshold:
+            if dist_to_goal < self._min_dist_to_goal - 0.10:
+                # İlerleme kaydedildi, mesafeyi ve zaman damgasını güncelle
+                self._min_dist_to_goal = dist_to_goal
+                self._last_progress_time = current_time
+            else:
+                elapsed_without_progress = (current_time - self._last_progress_time).nanoseconds / 1e9
+                if elapsed_without_progress > self.proximity_stuck_timeout:
+                    self.get_logger().warn(
+                        f'⚠️ Hedefe yakın konumda sıkışma tespit edildi ({dist_to_goal:.2f}m uzaklıkta). '
+                        f'{self.proximity_stuck_timeout} saniyedir ilerleme kaydedilemedi. Hedef iptal ediliyor.')
+                    self._cancel_and_blacklist_current_goal()
+                    return
+        else:
+            # Hedefe uzakken yakınlık denetimini sıfırla/güncelle
+            if dist_to_goal < self._min_dist_to_goal:
+                self._min_dist_to_goal = dist_to_goal
+                self._last_progress_time = current_time
+
+        # 2. Aşama: Fiziksel hareket edememe tespiti (Physical stuck detection)
+        # Dronun son 12 saniye boyunca toplam yer değiştirmesini kontrol et.
+        # Eğer son 12 saniyede hiç 0.4 metreden fazla yer değiştirmediyse fiziksel olarak sıkışmıştır.
+        if len(self._position_history) >= int(self.physical_stuck_timeout):
+            max_displacement = 0.0
+            reference_pos = self._position_history[0] # 12 saniye önceki konum
+            for pos in self._position_history:
+                d = math.sqrt((pos[0] - reference_pos[0])**2 + (pos[1] - reference_pos[1])**2)
+                if d > max_displacement:
+                    max_displacement = d
+            
+            if max_displacement < self.physical_stuck_displacement:
+                self.get_logger().warn(
+                    f'⚠️ Dronun son {self.physical_stuck_timeout} saniyedeki yer değiştirmesi çok yetersiz ({max_displacement:.2f}m). '
+                    f'Fiziksel sıkışma algılandı. Hedef iptal ediliyor.')
+                self._cancel_and_blacklist_current_goal()
+                return
+
+    def _cancel_and_blacklist_current_goal(self):
+        """Mevcut hedefi iptal eder ve kara listeye ekler."""
+        if self.current_target:
+            self._add_to_blacklist(self.current_target[0], self.current_target[1])
+
+        if self.goal_handle is not None:
+            self.get_logger().info('🚫 Nav2 hedefi iptal ediliyor...')
+            self.goal_handle.cancel_goal_async()
+            self.goal_handle = None
+        
+        self.goal_active = False
+        self.current_target = None
+        self._clear_active_goal()
+        
+        # Takip değişkenlerini temizle
+        self._nav_start_time = None
+        self._last_progress_time = None
+        self._min_dist_to_goal = None
+        self._position_history.clear()
 
     # ─────────────────────────────────────────────────────────
     # Frontier Tespit Algoritması
@@ -447,8 +550,8 @@ class FrontierExplorer(Node):
         nearby = [c for c in candidates if c['distance'] < self.nearby_threshold]
 
         if nearby:
-            # Yakın kümeler arasından en büyüğünü seç (yerel alanı bitir)
-            best = max(nearby, key=lambda c: c['size'])
+            # Yakın kümeler arasından en yakın olanını seç (yerel alanı temizleyerek ilerle)
+            best = min(nearby, key=lambda c: c['distance'])
         else:
             # Tüm kümeler uzak — skor = boyut / (mesafe^2)
             best = max(candidates, key=lambda c: c['size'] / (c['distance'] ** 2 + 0.1))
@@ -479,6 +582,12 @@ class FrontierExplorer(Node):
         goal_msg.pose.pose.orientation.w = 1.0
 
         self.goal_active = True
+        
+        # İlerleme/sıkışma takip değişkenlerini ilklendir/sıfırla
+        self._nav_start_time = self.get_clock().now()
+        self._last_progress_time = self._nav_start_time
+        self._min_dist_to_goal = 999.0
+        self._position_history.clear()
         
         # Aktif hedefi autonomous.py'ye bildir
         active_msg = PoseStamped()
