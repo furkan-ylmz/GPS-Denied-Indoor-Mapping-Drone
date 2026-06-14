@@ -28,8 +28,8 @@
 
     # 2D Navigasyon Haritası İçin Yükseklik Filtreleri
     Grid/MapFrameProjection: "true"         # Yükseklikleri drona göre değil, mutlak zemin (Map) eksenine göre hesapla
-    Grid/MinObstacleHeight: "0.2"           # Yerden 20 cm'ye kadar olan şeyleri (zemin) 2D haritada yoksay
-    Grid/MaxObstacleHeight: "2.0"           # Yerden 2 metreden yüksek olan şeyleri (tavan) 2D haritada yoksay
+    Grid/MinObstacleHeight: "1.2"           # Yerden 1.2 metreye (120 cm) kadar olan şeyleri 2D haritada yoksay
+    Grid/MaxObstacleHeight: "1.8"           # Yerden 1.8 metreden (180 cm) yüksek olan şeyleri 2D haritada yoksay
 
     # İleri Düzey Döngü Kapatma (Loop Closure) ve Optimizasyon
     RGBD/ProximityBySpace: "true"           # Dron aynı fiziksel mekana tekrar geldiğinde haritayı anında düzelt

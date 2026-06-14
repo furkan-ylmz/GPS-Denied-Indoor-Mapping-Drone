@@ -35,7 +35,7 @@ controller_server:
     goal_checker:
       plugin: "nav2_controller::SimpleGoalChecker"
       xy_goal_tolerance: 0.25         # Hedefin 25 cm yakınına gelirse "vardım" sayar
-      yaw_goal_tolerance: 0.25        # Hedefteki dönüklük açısı toleransı (Radyan)
+      yaw_goal_tolerance: 3.50        # Devre dışı (Süpürme explore.py'de yapılacağı için)
       stateful: true
 
     # MPPI Kontrolcüsü (Model Predictive Path Integral) - Ana Uçuş Algoritması
@@ -54,16 +54,16 @@ controller_server:
       retry_attempt_limit: 1
 
       # Uçuş Hız Limitleri (m/s)
-      vx_max: 2.0                     # Maksimum İleri hızı (1.2→2.0 m/s, düz yolda daha hızlı süzülür)
+      vx_max: 3.0                     # Maksimum İleri hızı (3.0 m/s)
       vx_min: -1.0                    # MPPI planlama için geri hıza izin ver (autonomous.py'de geri gitme dönüşe çevrilir)
-      vy_max: 1.5                     # Maksimum Sağ/Sol yana kayma hızı (1.2→1.5)
+      vy_max: 2.2                     # Maksimum Sağ/Sol yana kayma hızı (2.2 m/s)
       wz_max: 1.5                     # Maksimum kendi etrafında dönme (Yaw) hızı (rad/s)
 
       # İvme Limitleri (m/s²) - Kalkış ve duruşların yumuşaklığı
-      ax_max: 2.5                     # Daha hızlı ivmelenme (1.5→2.5, dönüşten çıkınca hızlı toparlanır)
-      ax_min: -2.5                    # Daha sert frenleme (1.5→2.5)
-      ay_max: 2.0                     # Yana ivmelenme (1.5→2.0)
-      ay_min: -2.0
+      ax_max: 3.5                     # Daha hızlı ivmelenme (3.5)
+      ax_min: -3.5                    # Daha sert frenleme (3.5)
+      ay_max: 3.0                     # Yana ivmelenme (3.0)
+      ay_min: -3.0
       az_max: 2.0
 
       # Rastgelelik (Örnekleme) Yayılımları - Dronun yapacağı küçük hareket arayışlarının şiddeti
@@ -233,8 +233,8 @@ local_costmap:
           obstacle_min_range: 0.4     # KRİTİK: Dronun kendi gövdesini ve pervanelerini engel görmemesi için min mesafe (40 cm)
           raytrace_max_range: 4.0     # Dron 4 metreye kadar olan boşlukları tarayıp temizler
           raytrace_min_range: 0.4     # Kendi gövdesi üzerindeki temizlemeleri filtreler
-          max_obstacle_height: 2.0    # 2 Metreden yüksekteki engelleri (tavan vb) umursama
-          min_obstacle_height: 0.2    # 20 cm'den alçak engelleri (zemin vb) umursama
+          max_obstacle_height: 1.80    # 1.8 metreden yüksekteki engelleri (tavan vb) umursama
+          min_obstacle_height: 1.20    # 1.2 metreden alçak engelleri (zemin vb) umursama
           inf_is_valid: false
           sensor_frame: "lidar_link"
 
