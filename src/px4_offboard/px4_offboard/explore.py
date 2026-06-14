@@ -57,7 +57,8 @@ class FrontierExplorer(Node):
 
         # --- ROS2 Parametreleri ---
         self.declare_parameter('min_frontier_size', 15)
-        self.declare_parameter('nearby_threshold', 2.0)
+        self.declare_parameter('nearby_threshold', 3.5)
+        self.declare_parameter('mid_threshold', 7.5)
         self.declare_parameter('min_goal_distance', 0.8)
         self.declare_parameter('map_update_interval', 1.0)
         self.declare_parameter('goal_timeout', 60.0)
@@ -73,6 +74,7 @@ class FrontierExplorer(Node):
 
         self.min_frontier_size = self.get_parameter('min_frontier_size').value
         self.nearby_threshold = self.get_parameter('nearby_threshold').value
+        self.mid_threshold = self.get_parameter('mid_threshold').value
         self.min_goal_distance = self.get_parameter('min_goal_distance').value
         self.map_update_interval = self.get_parameter('map_update_interval').value
         self.goal_timeout = self.get_parameter('goal_timeout').value
@@ -546,15 +548,25 @@ class FrontierExplorer(Node):
         if not candidates:
             return None, None
 
-        # Yakın kümeleri filtrele
+        # Üç aşamalı mesafe bandı denetimi
         nearby = [c for c in candidates if c['distance'] < self.nearby_threshold]
+        mid_range = [c for c in candidates if self.nearby_threshold <= c['distance'] < self.mid_threshold]
+        far_range = [c for c in candidates if c['distance'] >= self.mid_threshold]
 
         if nearby:
-            # Yakın kümeler arasından en yakın olanını seç (yerel alanı temizleyerek ilerle)
-            best = min(nearby, key=lambda c: c['distance'])
+            # 1. Bölge (0.0m - 3.5m): En küçük olanını seç (yaprak/cep temizliği)
+            best = min(nearby, key=lambda c: c['size'])
+            self.get_logger().info(f'  [Yerel Bölge < {self.nearby_threshold}m] En küçük küme seçildi.')
+        elif mid_range:
+            # 2. Bölge (3.5m - 7.5m): Kendi aralarında skora göre en iyisini seç
+            best = max(mid_range, key=lambda c: c['size'] / (c['distance'] ** 2 + 0.1))
+            self.get_logger().info(f'  [Orta Bölge {self.nearby_threshold}m - {self.mid_threshold}m] Skora göre seçildi.')
+        elif far_range:
+            # 3. Bölge (> 7.5m): Kendi aralarında skora göre en iyisini seç
+            best = max(far_range, key=lambda c: c['size'] / (c['distance'] ** 2 + 0.1))
+            self.get_logger().info(f'  [Uzak Bölge > {self.mid_threshold}m] Skora göre seçildi.')
         else:
-            # Tüm kümeler uzak — skor = boyut / (mesafe^2)
-            best = max(candidates, key=lambda c: c['size'] / (c['distance'] ** 2 + 0.1))
+            return None, None
 
         self.get_logger().info(
             f'  Seçilen küme: hedef=({best["goal"][0]:.2f}, {best["goal"][1]:.2f}), '

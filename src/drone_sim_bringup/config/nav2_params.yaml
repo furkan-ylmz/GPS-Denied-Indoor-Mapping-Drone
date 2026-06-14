@@ -54,16 +54,16 @@ controller_server:
       retry_attempt_limit: 1
 
       # Uçuş Hız Limitleri (m/s)
-      vx_max: 3.0                     # Maksimum İleri hızı (3.0 m/s)
+      vx_max: 3.5                     # Maksimum İleri hızı (3.5 m/s)
       vx_min: -1.0                    # MPPI planlama için geri hıza izin ver (autonomous.py'de geri gitme dönüşe çevrilir)
-      vy_max: 2.2                     # Maksimum Sağ/Sol yana kayma hızı (2.2 m/s)
+      vy_max: 2.5                     # Maksimum Sağ/Sol yana kayma hızı (2.5 m/s)
       wz_max: 1.5                     # Maksimum kendi etrafında dönme (Yaw) hızı (rad/s)
 
       # İvme Limitleri (m/s²) - Kalkış ve duruşların yumuşaklığı
-      ax_max: 3.5                     # Daha hızlı ivmelenme (3.5)
-      ax_min: -3.5                    # Daha sert frenleme (3.5)
-      ay_max: 3.0                     # Yana ivmelenme (3.0)
-      ay_min: -3.0
+      ax_max: 4.0                     # Daha hızlı ivmelenme (4.0)
+      ax_min: -4.0                    # Daha sert frenleme (4.0)
+      ay_max: 3.5                     # Yana ivmelenme (3.5)
+      ay_min: -3.5
       az_max: 2.0
 
       # Rastgelelik (Örnekleme) Yayılımları - Dronun yapacağı küçük hareket arayışlarının şiddeti
@@ -182,7 +182,7 @@ global_costmap:
       publish_frequency: 1.0
       global_frame: map
       robot_base_frame: base_link
-      robot_radius: 0.40              # Dronun çarpışma güvenliği için sanal yarıçapı (40 cm)
+      robot_radius: 0.35              # Dronun çarpışma güvenliği için sanal yarıçapı (35 cm)
       resolution: 0.05                # Haritadaki her pikselin gerçek hayattaki boyutu (5 cm)
       track_unknown_space: true
       rolling_window: false           # Harita sabittir, dronla birlikte kaymaz
@@ -199,7 +199,7 @@ global_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0      # Duvarlardan uzaklaştıkça tehlikenin azalma hızı
-        inflation_radius: 0.75        # Duvarların etrafına çizilen 75 cm'lik görünmez "uzak dur" alanı
+        inflation_radius: 0.50        # Duvarların etrafına çizilen 50 cm'lik görünmez "uzak dur" alanı
 
 # ============================================================
 # LOCAL COSTMAP — /lidar/points ile Anlık Engeller ve Refleksler
@@ -212,7 +212,7 @@ local_costmap:
       publish_frequency: 2.0
       global_frame: odom
       robot_base_frame: base_link
-      robot_radius: 0.40
+      robot_radius: 0.35
       resolution: 0.05
       rolling_window: true            # Dron hareket ettikçe harita dronun etrafında kayar (5x5 metrelik görüş penceresi)
       width: 5                        # Çevresindeki 5 metrelik alanı anlık olarak inceler
@@ -241,7 +241,7 @@ local_costmap:
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
         cost_scaling_factor: 3.0
-        inflation_radius: 0.75
+        inflation_radius: 0.50
 
 # ============================================================
 # LIFECYCLE MANAGER
