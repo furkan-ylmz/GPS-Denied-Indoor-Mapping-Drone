@@ -8,6 +8,7 @@ import rclpy
 from rclpy.node import Node
 from rclpy.qos import QoSProfile, ReliabilityPolicy, HistoryPolicy, DurabilityPolicy
 
+from geometry_msgs.msg import Twist
 from px4_msgs.msg import (
     OffboardControlMode,
     TrajectorySetpoint,
@@ -46,7 +47,7 @@ class DroneTeleop(Node):
         self.step_xy = 0.5
         self.step_z = 0.15
         self.step_yaw = 0.2
-        self.takeoff_alt = 1.0
+        self.takeoff_alt = 1.5
 
         self.offboard_mode_pub = self.create_publisher(
             OffboardControlMode, "/fmu/in/offboard_control_mode", PX4_QOS)
@@ -54,12 +55,14 @@ class DroneTeleop(Node):
             TrajectorySetpoint, "/fmu/in/trajectory_setpoint", PX4_QOS)
         self.command_pub = self.create_publisher(
             VehicleCommand, "/fmu/in/vehicle_command", PX4_QOS)
+        self.teleop_cmd_pub = self.create_publisher(
+            Twist, "/teleop/cmd_vel", 10)
 
         self.create_subscription(
-            VehicleLocalPosition, "/fmu/out/vehicle_local_position_v1",
+            VehicleLocalPosition, "/fmu/out/vehicle_local_position",
             self._pos_cb, PX4_QOS)
         self.create_subscription(
-            VehicleStatus, "/fmu/out/vehicle_status_v4",
+            VehicleStatus, "/fmu/out/vehicle_status",
             self._status_cb, PX4_QOS)
 
         self.pos = [0.0, 0.0, 0.0]
@@ -170,6 +173,14 @@ class DroneTeleop(Node):
             if self.armed:
                 self.do_land()
 
+    def _publish_twist(self, vx=0.0, vy=0.0, vz=0.0, wz=0.0):
+        msg = Twist()
+        msg.linear.x = float(vx)
+        msg.linear.y = float(vy)
+        msg.linear.z = float(vz)
+        msg.angular.z = float(wz)
+        self.teleop_cmd_pub.publish(msg)
+
     def _handle_key(self, key):
         t = self.target
         yaw = self.target_yaw
@@ -181,34 +192,43 @@ class DroneTeleop(Node):
         elif key == "w":
             t[0] += self.step_xy * math.cos(yaw)
             t[1] += self.step_xy * math.sin(yaw)
+            self._publish_twist(vx=self.step_xy)
             print(f"  > Ileri  | x={t[0]:.1f} y={t[1]:.1f} z={t[2]:.1f}")
         elif key == "s":
             t[0] -= self.step_xy * math.cos(yaw)
             t[1] -= self.step_xy * math.sin(yaw)
+            self._publish_twist(vx=-self.step_xy)
             print(f"  > Geri   | x={t[0]:.1f} y={t[1]:.1f} z={t[2]:.1f}")
         elif key == "a":
             t[0] += self.step_xy * math.sin(yaw)
-            t[1] -= self.step_xy * math.cos(yaw)
+            t[1] += self.step_xy * math.cos(yaw)
+            self._publish_twist(vy=self.step_xy)
             print(f"  > Sol    | x={t[0]:.1f} y={t[1]:.1f} z={t[2]:.1f}")
         elif key == "d":
             t[0] -= self.step_xy * math.sin(yaw)
             t[1] += self.step_xy * math.cos(yaw)
+            self._publish_twist(vy=-self.step_xy)
             print(f"  > Sag    | x={t[0]:.1f} y={t[1]:.1f} z={t[2]:.1f}")
         elif key == "q":
             t[2] -= self.step_z
+            self._publish_twist(vz=self.step_z)
             print(f"  > Yukari | x={t[0]:.1f} y={t[1]:.1f} z={t[2]:.1f}")
         elif key == "e":
             t[2] += self.step_z
+            self._publish_twist(vz=-self.step_z)
             print(f"  > Asagi  | x={t[0]:.1f} y={t[1]:.1f} z={t[2]:.1f}")
         elif key == "z":
             self.target_yaw -= self.step_yaw
+            self._publish_twist(wz=self.step_yaw)
             print(f"  > Yaw L  | yaw={self.target_yaw:.2f} rad")
         elif key == "c":
             self.target_yaw += self.step_yaw
+            self._publish_twist(wz=-self.step_yaw)
             print(f"  > Yaw R  | yaw={self.target_yaw:.2f} rad")
         elif key == " ":
             self.target = list(self.pos)
             t = self.target
+            self._publish_twist()
             print(f"  > HOVER  | x={t[0]:.1f} y={t[1]:.1f} z={t[2]:.1f}")
 
 def main(args=None):

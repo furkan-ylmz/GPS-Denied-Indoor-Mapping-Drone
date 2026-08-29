@@ -28,6 +28,8 @@ setup(
             'teleop = px4_offboard.teleop:main',
             'autonomous = px4_offboard.autonomous:main',
             'explore = px4_offboard.explore:main',
+            'safety_monitor = px4_offboard.safety_monitor:main',
+            'operator_interface = px4_offboard.operator_interface:main',
         ],
     },
 )
