@@ -1,0 +1,1520 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Drone Kontrol Merkezi</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* ─────────────────────────────────────────────────────────
+           CSS Değişkenleri — Tema Renkleri
+           ───────────────────────────────────────────────────────── */
+        :root {
+            --bg-primary: #0a0e1a;
+            --bg-secondary: #111827;
+            --bg-card: #1a1f35;
+            --bg-card-hover: #1e2440;
+            --border-color: #2a3050;
+            --border-glow: #3b82f640;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --text-muted: #64748b;
+            --accent-blue: #3b82f6;
+            --accent-blue-hover: #2563eb;
+            --accent-blue-glow: #3b82f640;
+            --success-green: #22c55e;
+            --success-green-dim: #22c55e30;
+            --warning-orange: #f59e0b;
+            --warning-orange-dim: #f59e0b30;
+            --danger-red: #ef4444;
+            --danger-red-dim: #ef444430;
+            --danger-red-glow: #ef444460;
+            --font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            --radius-sm: 6px;
+            --radius-md: 10px;
+            --radius-lg: 14px;
+            --radius-xl: 18px;
+            --shadow-card: 0 4px 24px rgba(0, 0, 0, 0.3);
+            --shadow-glow-blue: 0 0 20px var(--accent-blue-glow);
+            --shadow-glow-red: 0 0 20px var(--danger-red-glow);
+            --transition-fast: 150ms ease;
+            --transition-normal: 250ms ease;
+            --transition-slow: 400ms ease;
+        }
+
+        /* ─── Reset & Base ─── */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        html {
+            font-size: 16px;
+            -webkit-font-smoothing: antialiased;
+            -moz-osx-font-smoothing: grayscale;
+        }
+
+        body {
+            font-family: var(--font-family);
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            min-height: 100vh;
+            overflow-x: hidden;
+        }
+
+        /* ─── Background Pattern ─── */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: 
+                radial-gradient(ellipse at 20% 50%, #1a237e10 0%, transparent 50%),
+                radial-gradient(ellipse at 80% 20%, #0d47a110 0%, transparent 50%),
+                radial-gradient(ellipse at 50% 80%, #1b5e2010 0%, transparent 50%);
+            pointer-events: none;
+            z-index: 0;
+        }
+
+        /* ─── Header ─── */
+        .header {
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 16px 28px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            backdrop-filter: blur(10px);
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+
+        .header-icon {
+            font-size: 28px;
+            filter: drop-shadow(0 0 8px var(--accent-blue-glow));
+        }
+
+        .header h1 {
+            font-size: 1.3rem;
+            font-weight: 700;
+            letter-spacing: -0.02em;
+            background: linear-gradient(135deg, var(--text-primary), var(--accent-blue));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .header-subtitle {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px 14px;
+            border-radius: var(--radius-lg);
+            font-size: 0.8rem;
+            font-weight: 500;
+            transition: all var(--transition-normal);
+        }
+
+        .connection-status.connected {
+            background: var(--success-green-dim);
+            color: var(--success-green);
+            border: 1px solid var(--success-green);
+        }
+
+        .connection-status.disconnected {
+            background: var(--danger-red-dim);
+            color: var(--danger-red);
+            border: 1px solid var(--danger-red);
+            animation: pulse-danger 2s infinite;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: currentColor;
+        }
+
+        .connection-status.connected .status-dot {
+            animation: pulse-dot 2s infinite;
+        }
+
+        /* ─── Main Layout ─── */
+        .main-content {
+            position: relative;
+            z-index: 1;
+            display: grid;
+            grid-template-columns: 360px 1fr;
+            grid-template-rows: 1fr auto;
+            gap: 20px;
+            padding: 20px 28px;
+            max-width: 1400px;
+            margin: 0 auto;
+            min-height: calc(100vh - 70px);
+        }
+
+        /* ─── Card ─── */
+        .card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-xl);
+            padding: 24px;
+            box-shadow: var(--shadow-card);
+            transition: border-color var(--transition-normal);
+        }
+
+        .card:hover {
+            border-color: var(--border-glow);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 20px;
+            padding-bottom: 14px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .card-header h2 {
+            font-size: 1rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .card-header-icon {
+            font-size: 1.1rem;
+        }
+
+        /* ─── Control Panel ─── */
+        .control-panel {
+            grid-row: 1 / 3;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .control-panel .card {
+            flex-shrink: 0;
+        }
+
+        /* ─── Buttons ─── */
+        .btn {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            width: 100%;
+            padding: 16px 20px;
+            border: 2px solid transparent;
+            border-radius: var(--radius-lg);
+            font-family: var(--font-family);
+            font-size: 1rem;
+            font-weight: 700;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            letter-spacing: 0.02em;
+            text-transform: uppercase;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .btn:disabled {
+            opacity: 0.35;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
+
+        .btn:not(:disabled):active {
+            transform: scale(0.97);
+        }
+
+        .btn-icon {
+            font-size: 1.2rem;
+        }
+
+        /* ARM Butonu */
+        .btn-arm {
+            background: linear-gradient(135deg, #166534, #15803d);
+            border-color: var(--success-green);
+            color: white;
+            font-size: 1.1rem;
+            padding: 20px;
+        }
+
+        .btn-arm:not(:disabled):hover {
+            background: linear-gradient(135deg, #15803d, #16a34a);
+            box-shadow: 0 0 24px var(--success-green-dim), 0 4px 16px rgba(0, 0, 0, 0.3);
+            transform: translateY(-1px);
+        }
+
+        /* LAND Butonu */
+        .btn-land {
+            background: linear-gradient(135deg, #92400e, #b45309);
+            border-color: var(--warning-orange);
+            color: white;
+            font-size: 1.1rem;
+            padding: 20px;
+        }
+
+        .btn-land:not(:disabled):hover {
+            background: linear-gradient(135deg, #b45309, #d97706);
+            box-shadow: 0 0 24px var(--warning-orange-dim), 0 4px 16px rgba(0, 0, 0, 0.3);
+            transform: translateY(-1px);
+        }
+
+        /* EMERGENCY STOP Butonu */
+        .btn-emergency {
+            background: linear-gradient(135deg, #991b1b, #dc2626);
+            border-color: var(--danger-red);
+            color: white;
+            font-size: 1.2rem;
+            padding: 22px;
+            animation: emergency-ready 3s infinite;
+        }
+
+        .btn-emergency:not(:disabled):hover {
+            background: linear-gradient(135deg, #b91c1c, #ef4444);
+            box-shadow: var(--shadow-glow-red), 0 4px 20px rgba(0, 0, 0, 0.4);
+            transform: translateY(-2px);
+            animation: none;
+        }
+
+        /* Mode Toggle */
+        .mode-toggle-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 4px 0;
+        }
+
+        .mode-label {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .mode-label.active {
+            color: var(--accent-blue);
+            font-weight: 600;
+        }
+
+        .toggle-switch {
+            position: relative;
+            width: 56px;
+            height: 30px;
+            cursor: pointer;
+        }
+
+        .toggle-switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .toggle-slider {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: var(--bg-secondary);
+            border: 2px solid var(--border-color);
+            border-radius: 30px;
+            transition: all var(--transition-normal);
+        }
+
+        .toggle-slider::before {
+            content: '';
+            position: absolute;
+            left: 3px;
+            top: 3px;
+            width: 20px;
+            height: 20px;
+            background: var(--text-secondary);
+            border-radius: 50%;
+            transition: all var(--transition-normal);
+        }
+
+        .toggle-switch input:checked + .toggle-slider {
+            background: var(--accent-blue);
+            border-color: var(--accent-blue);
+        }
+
+        .toggle-switch input:checked + .toggle-slider::before {
+            transform: translateX(26px);
+            background: white;
+        }
+
+        /* ─── Status Panel ─── */
+        .status-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .status-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .status-label {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        .status-value {
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* State Badge */
+        .state-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 14px;
+            border-radius: var(--radius-lg);
+            font-size: 0.8rem;
+            font-weight: 600;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            transition: all var(--transition-normal);
+        }
+
+        .state-badge.idle {
+            background: var(--bg-secondary);
+            color: var(--text-secondary);
+            border: 1px solid var(--border-color);
+        }
+
+        .state-badge.waiting {
+            background: #3b82f620;
+            color: var(--accent-blue);
+            border: 1px solid var(--accent-blue);
+            animation: pulse-badge 2s infinite;
+        }
+
+        .state-badge.active {
+            background: var(--success-green-dim);
+            color: var(--success-green);
+            border: 1px solid var(--success-green);
+            box-shadow: 0 0 12px var(--success-green-dim);
+        }
+
+        .state-badge.warning {
+            background: var(--warning-orange-dim);
+            color: var(--warning-orange);
+            border: 1px solid var(--warning-orange);
+        }
+
+        .state-badge.danger {
+            background: var(--danger-red-dim);
+            color: var(--danger-red);
+            border: 1px solid var(--danger-red);
+            animation: pulse-danger 1.5s infinite;
+        }
+
+        /* Armed Indicator */
+        .armed-indicator {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .armed-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            transition: all var(--transition-normal);
+        }
+
+        .armed-dot.armed {
+            background: var(--success-green);
+            box-shadow: 0 0 10px var(--success-green-dim);
+            animation: pulse-dot 1.5s infinite;
+        }
+
+        .armed-dot.disarmed {
+            background: var(--text-muted);
+        }
+
+        /* Altitude Display */
+        .altitude-display {
+            font-size: 1.8rem;
+            font-weight: 800;
+            color: var(--text-primary);
+            letter-spacing: -0.02em;
+        }
+
+        .altitude-unit {
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-left: 4px;
+        }
+
+        /* Battery */
+        .battery-container {
+            width: 100%;
+        }
+
+        .battery-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+        }
+
+        .battery-bar-bg {
+            width: 100%;
+            height: 10px;
+            background: var(--bg-secondary);
+            border-radius: 10px;
+            overflow: hidden;
+            border: 1px solid var(--border-color);
+        }
+
+        .battery-bar-fill {
+            height: 100%;
+            border-radius: 10px;
+            transition: width var(--transition-slow), background var(--transition-slow);
+        }
+
+        .battery-bar-fill.high {
+            background: linear-gradient(90deg, var(--success-green), #4ade80);
+        }
+
+        .battery-bar-fill.medium {
+            background: linear-gradient(90deg, var(--warning-orange), #fbbf24);
+        }
+
+        .battery-bar-fill.low {
+            background: linear-gradient(90deg, var(--danger-red), #f87171);
+            animation: pulse-danger 2s infinite;
+        }
+
+        /* Mode Indicator */
+        .mode-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 5px 12px;
+            border-radius: var(--radius-md);
+            font-size: 0.8rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .mode-indicator.manual {
+            background: #6366f120;
+            color: #818cf8;
+            border: 1px solid #6366f1;
+        }
+
+        .mode-indicator.auto {
+            background: var(--accent-blue-glow);
+            color: var(--accent-blue);
+            border: 1px solid var(--accent-blue);
+        }
+
+        /* ─── System Monitor ─── */
+        .system-monitor {
+            grid-column: 1 / 3;
+        }
+
+        .system-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .system-metric {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: 16px;
+            transition: border-color var(--transition-normal);
+        }
+
+        .system-metric:hover {
+            border-color: var(--border-glow);
+        }
+
+        .metric-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 10px;
+        }
+
+        .metric-label {
+            font-size: 0.8rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .metric-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text-primary);
+        }
+
+        .metric-bar-bg {
+            width: 100%;
+            height: 6px;
+            background: var(--bg-primary);
+            border-radius: 6px;
+            overflow: hidden;
+        }
+
+        .metric-bar-fill {
+            height: 100%;
+            border-radius: 6px;
+            transition: width var(--transition-slow), background var(--transition-slow);
+        }
+
+        /* Temperature */
+        .temp-value {
+            font-size: 1.1rem;
+            font-weight: 700;
+            transition: color var(--transition-normal);
+        }
+
+        .temp-value.cool { color: var(--success-green); }
+        .temp-value.warm { color: var(--warning-orange); }
+        .temp-value.hot { color: var(--danger-red); animation: pulse-danger 2s infinite; }
+
+        /* Sensor Status */
+        .sensor-grid {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .sensor-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 8px 12px;
+            background: var(--bg-primary);
+            border-radius: var(--radius-sm);
+            border: 1px solid var(--border-color);
+        }
+
+        .sensor-name {
+            font-size: 0.8rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        .sensor-status {
+            font-size: 0.85rem;
+            font-weight: 600;
+        }
+
+        .sensor-status.ok { color: var(--success-green); }
+        .sensor-status.error { color: var(--danger-red); }
+
+        /* ─── Modal ─── */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(4px);
+            z-index: 1000;
+            align-items: center;
+            justify-content: center;
+            animation: fadeIn var(--transition-fast);
+        }
+
+        .modal-overlay.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-xl);
+            padding: 32px;
+            max-width: 420px;
+            width: 90%;
+            text-align: center;
+            box-shadow: var(--shadow-card), 0 0 40px rgba(0, 0, 0, 0.5);
+            animation: slideUp var(--transition-normal);
+        }
+
+        .modal-icon {
+            font-size: 3rem;
+            margin-bottom: 16px;
+        }
+
+        .modal-title {
+            font-size: 1.2rem;
+            font-weight: 700;
+            margin-bottom: 10px;
+            color: var(--text-primary);
+        }
+
+        .modal-message {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 24px;
+            line-height: 1.5;
+        }
+
+        .modal-buttons {
+            display: flex;
+            gap: 12px;
+        }
+
+        .modal-btn {
+            flex: 1;
+            padding: 12px 20px;
+            border: 2px solid transparent;
+            border-radius: var(--radius-md);
+            font-family: var(--font-family);
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all var(--transition-fast);
+            text-transform: uppercase;
+            letter-spacing: 0.02em;
+        }
+
+        .modal-btn-cancel {
+            background: var(--bg-secondary);
+            border-color: var(--border-color);
+            color: var(--text-secondary);
+        }
+
+        .modal-btn-cancel:hover {
+            background: var(--bg-card-hover);
+            color: var(--text-primary);
+        }
+
+        .modal-btn-confirm {
+            background: var(--accent-blue);
+            color: white;
+        }
+
+        .modal-btn-confirm:hover {
+            background: var(--accent-blue-hover);
+            box-shadow: var(--shadow-glow-blue);
+        }
+
+        .modal-btn-confirm.danger {
+            background: var(--danger-red);
+        }
+
+        .modal-btn-confirm.danger:hover {
+            background: #dc2626;
+            box-shadow: var(--shadow-glow-red);
+        }
+
+        .modal-btn-confirm.success {
+            background: var(--success-green);
+        }
+
+        .modal-btn-confirm.success:hover {
+            background: #16a34a;
+        }
+
+        .modal-btn-confirm.warning {
+            background: var(--warning-orange);
+            color: #1a1a1a;
+        }
+
+        .modal-btn-confirm.warning:hover {
+            background: #d97706;
+        }
+
+        /* ─── Toast Notifications ─── */
+        .toast-container {
+            position: fixed;
+            bottom: 24px;
+            right: 24px;
+            z-index: 2000;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .toast {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px 18px;
+            border-radius: var(--radius-md);
+            font-size: 0.85rem;
+            font-weight: 500;
+            min-width: 280px;
+            animation: slideIn var(--transition-normal);
+            border: 1px solid transparent;
+        }
+
+        .toast.success {
+            background: var(--success-green-dim);
+            color: var(--success-green);
+            border-color: var(--success-green);
+        }
+
+        .toast.error {
+            background: var(--danger-red-dim);
+            color: var(--danger-red);
+            border-color: var(--danger-red);
+        }
+
+        .toast.fadeout {
+            animation: fadeOut 300ms forwards;
+        }
+
+        /* ─── Animations ─── */
+        @keyframes pulse-dot {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.4; }
+        }
+
+        @keyframes pulse-badge {
+            0%, 100% { box-shadow: 0 0 0 0 var(--accent-blue-glow); }
+            50% { box-shadow: 0 0 12px 4px var(--accent-blue-glow); }
+        }
+
+        @keyframes pulse-danger {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+
+        @keyframes emergency-ready {
+            0%, 100% { box-shadow: 0 0 0 0 var(--danger-red-glow); }
+            50% { box-shadow: 0 0 16px 2px var(--danger-red-glow); }
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes slideUp {
+            from { opacity: 0; transform: translateY(20px) scale(0.95); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateX(40px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        @keyframes fadeOut {
+            from { opacity: 1; transform: translateX(0); }
+            to { opacity: 0; transform: translateX(40px); }
+        }
+
+        /* ─── Disconnected Warning Banner ─── */
+        .disconnected-banner {
+            display: none;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            padding: 10px 20px;
+            background: var(--danger-red-dim);
+            border-bottom: 2px solid var(--danger-red);
+            color: var(--danger-red);
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-align: center;
+            animation: pulse-danger 2s infinite;
+        }
+
+        .disconnected-banner.active {
+            display: flex;
+        }
+
+        /* ─── Responsive ─── */
+        @media (max-width: 900px) {
+            .main-content {
+                grid-template-columns: 1fr;
+                grid-template-rows: auto auto auto;
+                padding: 12px 14px;
+                gap: 14px;
+            }
+
+            .control-panel {
+                grid-row: auto;
+            }
+
+            .system-monitor {
+                grid-column: 1;
+            }
+
+            .header {
+                padding: 12px 16px;
+            }
+
+            .header h1 {
+                font-size: 1.1rem;
+            }
+
+            .btn-arm, .btn-land {
+                padding: 16px;
+                font-size: 1rem;
+            }
+
+            .btn-emergency {
+                padding: 18px;
+                font-size: 1.1rem;
+            }
+        }
+
+        /* ─── Separator ─── */
+        .separator {
+            height: 1px;
+            background: var(--border-color);
+            margin: 8px 0;
+        }
+
+        /* ─── No Data ─── */
+        .no-data {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            font-style: italic;
+            text-align: center;
+            padding: 20px;
+        }
+    </style>
+</head>
+<body>
+
+<!-- ─── Header ─── -->
+<header class="header">
+    <div class="header-left">
+        <span class="header-icon">🛸</span>
+        <div>
+            <h1>Drone Kontrol Merkezi</h1>
+            <span class="header-subtitle">Otonom Haritalama Sistemi — S500</span>
+        </div>
+    </div>
+    <div id="connectionStatus" class="connection-status disconnected">
+        <span class="status-dot"></span>
+        <span id="connectionText">Bağlantı Yok</span>
+    </div>
+</header>
+
+<!-- ─── Disconnected Banner ─── -->
+<div id="disconnectedBanner" class="disconnected-banner">
+    ⚠️ Sunucu ile bağlantı kesildi — Otomatik yeniden bağlanma deneniyor...
+</div>
+
+<!-- ─── Main Content ─── -->
+<div class="main-content">
+
+    <!-- ─── Control Panel (Sol) ─── -->
+    <div class="control-panel">
+        <!-- Kontrol Butonları -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-header-icon">🎮</span>
+                <h2>Uçuş Kontrol</h2>
+            </div>
+
+            <div style="display: flex; flex-direction: column; gap: 12px;">
+                <button id="btnArm" class="btn btn-arm" onclick="confirmCommand('ARM')">
+                    <span class="btn-icon">🔓</span> ARM — Motorları Etkinleştir
+                </button>
+
+                <button id="btnLand" class="btn btn-land" onclick="confirmCommand('LAND')">
+                    <span class="btn-icon">🛬</span> İNİŞ YAP
+                </button>
+
+                <div class="separator"></div>
+
+                <!-- Mod Seçici -->
+                <div class="mode-toggle-container">
+                    <span id="labelManual" class="mode-label active">MANUEL</span>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="modeToggle" onchange="toggleMode()">
+                        <span class="toggle-slider"></span>
+                    </label>
+                    <span id="labelAuto" class="mode-label">OTOMATİK</span>
+                </div>
+
+                <div class="separator"></div>
+
+                <button id="btnEmergency" class="btn btn-emergency" onclick="sendEmergencyStop()">
+                    <span class="btn-icon">🚨</span> ACİL DURDUR
+                </button>
+            </div>
+        </div>
+
+        <!-- Hızlı Bilgi -->
+        <div class="card">
+            <div class="card-header">
+                <span class="card-header-icon">📊</span>
+                <h2>Hızlı Bilgi</h2>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 16px;">
+                <!-- Yükseklik -->
+                <div style="text-align: center; padding: 8px 0;">
+                    <div class="status-label" style="margin-bottom: 4px;">Yükseklik</div>
+                    <div class="altitude-display">
+                        <span id="altitudeValue">0.00</span>
+                        <span class="altitude-unit">m</span>
+                    </div>
+                </div>
+
+                <div class="separator"></div>
+
+                <!-- Batarya -->
+                <div class="battery-container">
+                    <div class="battery-header">
+                        <span class="status-label">🔋 Batarya</span>
+                        <span id="batteryPercent" class="status-value">—%</span>
+                    </div>
+                    <div class="battery-bar-bg">
+                        <div id="batteryBar" class="battery-bar-fill high" style="width: 0%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── Status Panel (Sağ) ─── -->
+    <div class="card">
+        <div class="card-header">
+            <span class="card-header-icon">📡</span>
+            <h2>Drone Durumu</h2>
+        </div>
+        <div class="status-grid">
+            <!-- Durum -->
+            <div class="status-row">
+                <span class="status-label">Durum</span>
+                <span id="stateBadge" class="state-badge idle">BEKLİYOR</span>
+            </div>
+
+            <!-- Armed -->
+            <div class="status-row">
+                <span class="status-label">Motor Durumu</span>
+                <div class="armed-indicator">
+                    <span id="armedDot" class="armed-dot disarmed"></span>
+                    <span id="armedText" class="status-value">Pasif</span>
+                </div>
+            </div>
+
+            <div class="separator"></div>
+
+            <!-- Yükseklik -->
+            <div class="status-row">
+                <span class="status-label">Yükseklik</span>
+                <span id="altitudeDetail" class="status-value">0.00 m</span>
+            </div>
+
+            <!-- Pozisyon -->
+            <div class="status-row">
+                <span class="status-label">Pozisyon (NED)</span>
+                <span id="positionValue" class="status-value">X: 0.0  Y: 0.0</span>
+            </div>
+
+            <!-- Yaw -->
+            <div class="status-row">
+                <span class="status-label">Yaw Açısı</span>
+                <span id="yawValue" class="status-value">0.0°</span>
+            </div>
+
+            <div class="separator"></div>
+
+            <!-- Mod -->
+            <div class="status-row">
+                <span class="status-label">Kontrol Modu</span>
+                <span id="modeIndicator" class="mode-indicator manual">
+                    <span>🎮</span> MANUEL
+                </span>
+            </div>
+
+            <!-- Offboard -->
+            <div class="status-row">
+                <span class="status-label">Offboard Durumu</span>
+                <span id="offboardStatus" class="status-value">—</span>
+            </div>
+
+            <div class="separator"></div>
+
+            <!-- Nav State -->
+            <div class="status-row">
+                <span class="status-label">Navigasyon</span>
+                <span id="navState" class="status-value">—</span>
+            </div>
+
+            <!-- Son Güncelleme -->
+            <div class="status-row">
+                <span class="status-label">Son Güncelleme</span>
+                <span id="lastUpdate" class="status-value" style="color: var(--text-muted); font-size: 0.8rem;">—</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ─── System Monitor (Alt) ─── -->
+    <div class="card system-monitor">
+        <div class="card-header">
+            <span class="card-header-icon">🖥️</span>
+            <h2>Sistem Monitörü</h2>
+        </div>
+        <div class="system-grid">
+            <!-- CPU -->
+            <div class="system-metric">
+                <div class="metric-header">
+                    <span class="metric-label">CPU Kullanımı</span>
+                    <span id="cpuValue" class="metric-value">—%</span>
+                </div>
+                <div class="metric-bar-bg">
+                    <div id="cpuBar" class="metric-bar-fill" style="width: 0%; background: var(--accent-blue);"></div>
+                </div>
+            </div>
+
+            <!-- RAM -->
+            <div class="system-metric">
+                <div class="metric-header">
+                    <span class="metric-label">RAM Kullanımı</span>
+                    <span id="ramValue" class="metric-value">—%</span>
+                </div>
+                <div class="metric-bar-bg">
+                    <div id="ramBar" class="metric-bar-fill" style="width: 0%; background: #8b5cf6;"></div>
+                </div>
+            </div>
+
+            <!-- Sıcaklık -->
+            <div class="system-metric">
+                <div class="metric-header">
+                    <span class="metric-label">CPU Sıcaklığı</span>
+                    <span id="tempValue" class="temp-value cool">—°C</span>
+                </div>
+                <div class="metric-bar-bg">
+                    <div id="tempBar" class="metric-bar-fill" style="width: 0%; background: var(--success-green);"></div>
+                </div>
+            </div>
+
+            <!-- Sensörler -->
+            <div class="system-metric">
+                <div class="metric-header">
+                    <span class="metric-label">Sensör Durumu</span>
+                </div>
+                <div class="sensor-grid">
+                    <div class="sensor-item">
+                        <span class="sensor-name">LiDAR</span>
+                        <span id="sensorLidar" class="sensor-status error">❌ Bağlı Değil</span>
+                    </div>
+                    <div class="sensor-item">
+                        <span class="sensor-name">Kamera</span>
+                        <span id="sensorCamera" class="sensor-status error">❌ Bağlı Değil</span>
+                    </div>
+                    <div class="sensor-item">
+                        <span class="sensor-name">PX4</span>
+                        <span id="sensorPx4" class="sensor-status error">❌ Bağlı Değil</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ─── Confirmation Modal ─── -->
+<div id="confirmModal" class="modal-overlay">
+    <div class="modal-content">
+        <div id="modalIcon" class="modal-icon">⚠️</div>
+        <h3 id="modalTitle" class="modal-title">Emin misiniz?</h3>
+        <p id="modalMessage" class="modal-message">Bu işlem geri alınamaz.</p>
+        <div class="modal-buttons">
+            <button class="modal-btn modal-btn-cancel" onclick="closeModal()">İptal</button>
+            <button id="modalConfirmBtn" class="modal-btn modal-btn-confirm" onclick="executeCommand()">Onayla</button>
+        </div>
+    </div>
+</div>
+
+<!-- ─── Toast Container ─── -->
+<div id="toastContainer" class="toast-container"></div>
+
+<script>
+    /* ─────────────────────────────────────────────────────────
+       Drone Kontrol Merkezi — JavaScript
+       ───────────────────────────────────────────────────────── */
+
+    // ─── Durum Değişkenleri ───
+    let droneStatus = {};
+    let systemStatus = {};
+    let failCount = 0;
+    let isConnected = false;
+    let pendingCommand = null;
+    let currentMode = 'MANUAL';  // MANUAL veya AUTO
+
+    // ─── Durum etiketleri (Türkçe) ───
+    const STATE_LABELS = {
+        'IDLE': 'BOŞTA',
+        'WAITING_FOR_APPROVAL': 'ONAY BEKLİYOR',
+        'ARMING': 'ARM EDİLİYOR',
+        'TAKING_OFF': 'KALKIŞ',
+        'NAVIGATING': 'NAVİGASYON',
+        'HOVERING': 'HAVADA BEKLİYOR',
+        'LANDING': 'İNİŞ',
+        'EXPLORING': 'KEŞİF',
+        'EMERGENCY': 'ACİL DURUM',
+        'DISARMED': 'PASİF'
+    };
+
+    // ─── Durum → Badge sınıfı eşleştirmesi ───
+    const STATE_CLASSES = {
+        'IDLE': 'idle',
+        'WAITING_FOR_APPROVAL': 'waiting',
+        'ARMING': 'warning',
+        'TAKING_OFF': 'active',
+        'NAVIGATING': 'active',
+        'HOVERING': 'warning',
+        'LANDING': 'warning',
+        'EXPLORING': 'active',
+        'EMERGENCY': 'danger',
+        'DISARMED': 'idle'
+    };
+
+    // ─── API Çağrıları ───
+
+    async function fetchStatus() {
+        try {
+            const [statusRes, systemRes] = await Promise.all([
+                fetch('/api/status'),
+                fetch('/api/system')
+            ]);
+
+            if (statusRes.ok) {
+                droneStatus = await statusRes.json();
+            }
+            if (systemRes.ok) {
+                systemStatus = await systemRes.json();
+            }
+
+            failCount = 0;
+            setConnected(true);
+            updateUI();
+        } catch (err) {
+            failCount++;
+            if (failCount >= 3) {
+                setConnected(false);
+            }
+        }
+    }
+
+    async function sendCommand(command) {
+        try {
+            const res = await fetch('/api/command', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ command: command })
+            });
+
+            const data = await res.json();
+            if (res.ok) {
+                showToast('success', `✅ ${command} komutu gönderildi`);
+            } else {
+                showToast('error', `❌ Hata: ${data.error || 'Bilinmeyen hata'}`);
+            }
+        } catch (err) {
+            showToast('error', `❌ Bağlantı hatası: ${err.message}`);
+        }
+    }
+
+    // ─── Bağlantı Durumu ───
+
+    function setConnected(connected) {
+        isConnected = connected;
+        const el = document.getElementById('connectionStatus');
+        const text = document.getElementById('connectionText');
+        const banner = document.getElementById('disconnectedBanner');
+
+        if (connected) {
+            el.className = 'connection-status connected';
+            text.textContent = 'Bağlı';
+            banner.classList.remove('active');
+        } else {
+            el.className = 'connection-status disconnected';
+            text.textContent = 'Bağlantı Yok';
+            banner.classList.add('active');
+        }
+    }
+
+    // ─── UI Güncelleme ───
+
+    function updateUI() {
+        updateDroneStatus();
+        updateSystemStatus();
+        updateButtonStates();
+    }
+
+    function updateDroneStatus() {
+        // Durum badge
+        const state = droneStatus.state || 'IDLE';
+        const badgeEl = document.getElementById('stateBadge');
+        const label = STATE_LABELS[state] || state;
+        const badgeClass = STATE_CLASSES[state] || 'idle';
+        badgeEl.textContent = label;
+        badgeEl.className = `state-badge ${badgeClass}`;
+
+        // Armed durumu
+        const armed = droneStatus.armed === true;
+        const armedDot = document.getElementById('armedDot');
+        const armedText = document.getElementById('armedText');
+        armedDot.className = `armed-dot ${armed ? 'armed' : 'disarmed'}`;
+        armedText.textContent = armed ? 'Aktif (Armed)' : 'Pasif (Disarmed)';
+        armedText.style.color = armed ? 'var(--success-green)' : 'var(--text-muted)';
+
+        // Yükseklik (NED → pozitif)
+        const altNed = droneStatus.altitude || droneStatus.z || 0;
+        const altitude = Math.abs(altNed).toFixed(2);
+        document.getElementById('altitudeValue').textContent = altitude;
+        document.getElementById('altitudeDetail').textContent = `${altitude} m`;
+
+        // Pozisyon
+        const px = (droneStatus.x || 0).toFixed(1);
+        const py = (droneStatus.y || 0).toFixed(1);
+        document.getElementById('positionValue').textContent = `X: ${px}  Y: ${py}`;
+
+        // Yaw
+        const yaw = (droneStatus.yaw || 0);
+        const yawDeg = (yaw * 180 / Math.PI).toFixed(1);
+        document.getElementById('yawValue').textContent = `${yawDeg}°`;
+
+        // Batarya
+        const battery = droneStatus.battery || 0;
+        const batteryPct = Math.round(battery);
+        document.getElementById('batteryPercent').textContent = `${batteryPct}%`;
+        const batteryBar = document.getElementById('batteryBar');
+        batteryBar.style.width = `${batteryPct}%`;
+        batteryBar.className = `battery-bar-fill ${batteryPct > 50 ? 'high' : batteryPct > 20 ? 'medium' : 'low'}`;
+
+        // Mod
+        const mode = droneStatus.mode || currentMode;
+        const modeIndicator = document.getElementById('modeIndicator');
+        if (mode === 'AUTO') {
+            modeIndicator.className = 'mode-indicator auto';
+            modeIndicator.innerHTML = '<span>🤖</span> OTOMATİK';
+        } else {
+            modeIndicator.className = 'mode-indicator manual';
+            modeIndicator.innerHTML = '<span>🎮</span> MANUEL';
+        }
+
+        // Toggle durumunu senkronize et
+        const toggle = document.getElementById('modeToggle');
+        if (mode === 'AUTO' && !toggle.checked) {
+            toggle.checked = true;
+            updateModeLabels(true);
+        } else if (mode === 'MANUAL' && toggle.checked) {
+            toggle.checked = false;
+            updateModeLabels(false);
+        }
+
+        // Offboard
+        const offboard = droneStatus.offboard_active;
+        const offEl = document.getElementById('offboardStatus');
+        if (offboard === true) {
+            offEl.textContent = 'Aktif';
+            offEl.style.color = 'var(--success-green)';
+        } else if (offboard === false) {
+            offEl.textContent = 'Pasif';
+            offEl.style.color = 'var(--text-muted)';
+        } else {
+            offEl.textContent = '—';
+            offEl.style.color = 'var(--text-muted)';
+        }
+
+        // Nav state
+        const navState = droneStatus.nav_state;
+        document.getElementById('navState').textContent = navState !== undefined ? navState : '—';
+
+        // Son güncelleme
+        const age = droneStatus._age_seconds;
+        if (age !== undefined && age >= 0) {
+            document.getElementById('lastUpdate').textContent = age < 2 ? 'Az önce' : `${age.toFixed(0)} sn önce`;
+        }
+    }
+
+    function updateSystemStatus() {
+        // CPU
+        const cpu = systemStatus.cpu_percent || 0;
+        document.getElementById('cpuValue').textContent = `${cpu.toFixed(0)}%`;
+        const cpuBar = document.getElementById('cpuBar');
+        cpuBar.style.width = `${cpu}%`;
+        cpuBar.style.background = cpu > 80 ? 'var(--danger-red)' : cpu > 60 ? 'var(--warning-orange)' : 'var(--accent-blue)';
+
+        // RAM
+        const ram = systemStatus.ram_percent || 0;
+        document.getElementById('ramValue').textContent = `${ram.toFixed(0)}%`;
+        const ramBar = document.getElementById('ramBar');
+        ramBar.style.width = `${ram}%`;
+        ramBar.style.background = ram > 85 ? 'var(--danger-red)' : ram > 70 ? 'var(--warning-orange)' : '#8b5cf6';
+
+        // Sıcaklık
+        const temp = systemStatus.cpu_temp || 0;
+        const tempEl = document.getElementById('tempValue');
+        tempEl.textContent = `${temp.toFixed(1)}°C`;
+        tempEl.className = `temp-value ${temp < 60 ? 'cool' : temp < 80 ? 'warm' : 'hot'}`;
+        const tempBar = document.getElementById('tempBar');
+        tempBar.style.width = `${Math.min(temp, 100)}%`;
+        tempBar.style.background = temp < 60 ? 'var(--success-green)' : temp < 80 ? 'var(--warning-orange)' : 'var(--danger-red)';
+
+        // Sensörler
+        updateSensor('sensorLidar', systemStatus.lidar_ok);
+        updateSensor('sensorCamera', systemStatus.camera_ok);
+        updateSensor('sensorPx4', systemStatus.px4_ok);
+    }
+
+    function updateSensor(elementId, isOk) {
+        const el = document.getElementById(elementId);
+        if (isOk === true) {
+            el.className = 'sensor-status ok';
+            el.textContent = '✅ Bağlı';
+        } else if (isOk === false) {
+            el.className = 'sensor-status error';
+            el.textContent = '❌ Bağlı Değil';
+        } else {
+            el.className = 'sensor-status error';
+            el.textContent = '❌ Bağlı Değil';
+        }
+    }
+
+    function updateButtonStates() {
+        const armed = droneStatus.armed === true;
+        const state = droneStatus.state || 'IDLE';
+
+        const btnArm = document.getElementById('btnArm');
+        const btnLand = document.getElementById('btnLand');
+
+        // ARM: sadece disarmed iken aktif
+        btnArm.disabled = armed;
+        if (armed) {
+            btnArm.innerHTML = '<span class="btn-icon">🔒</span> ARM EDİLDİ';
+        } else {
+            btnArm.innerHTML = '<span class="btn-icon">🔓</span> ARM — Motorları Etkinleştir';
+        }
+
+        // LAND: sadece armed ve havadayken aktif
+        const airStates = ['TAKING_OFF', 'NAVIGATING', 'HOVERING', 'EXPLORING'];
+        btnLand.disabled = !armed || !airStates.includes(state);
+    }
+
+    function updateModeLabels(isAuto) {
+        document.getElementById('labelManual').className = `mode-label ${!isAuto ? 'active' : ''}`;
+        document.getElementById('labelAuto').className = `mode-label ${isAuto ? 'active' : ''}`;
+    }
+
+    // ─── Komut İşlemleri ───
+
+    function confirmCommand(command) {
+        pendingCommand = command;
+        const modal = document.getElementById('confirmModal');
+        const icon = document.getElementById('modalIcon');
+        const title = document.getElementById('modalTitle');
+        const msg = document.getElementById('modalMessage');
+        const btn = document.getElementById('modalConfirmBtn');
+
+        if (command === 'ARM') {
+            icon.textContent = '🔓';
+            title.textContent = 'Motorları Etkinleştir?';
+            msg.textContent = 'ARM komutu motorları etkinleştirecektir. Pervane alanının güvenli olduğundan emin olun.';
+            btn.textContent = 'ARM ET';
+            btn.className = 'modal-btn modal-btn-confirm success';
+        } else if (command === 'LAND') {
+            icon.textContent = '🛬';
+            title.textContent = 'İniş Yap?';
+            msg.textContent = 'Drone bulunduğu konumda iniş yapacaktır. İniş alanının uygun olduğundan emin olun.';
+            btn.textContent = 'İNİŞ YAP';
+            btn.className = 'modal-btn modal-btn-confirm warning';
+        }
+
+        modal.classList.add('active');
+    }
+
+    function closeModal() {
+        document.getElementById('confirmModal').classList.remove('active');
+        pendingCommand = null;
+    }
+
+    function executeCommand() {
+        if (pendingCommand) {
+            sendCommand(pendingCommand);
+            closeModal();
+        }
+    }
+
+    function sendEmergencyStop() {
+        // ACİL DURDUR — onay gerekmez, anında gönder
+        sendCommand('EMERGENCY_STOP');
+    }
+
+    function toggleMode() {
+        const isAuto = document.getElementById('modeToggle').checked;
+        currentMode = isAuto ? 'AUTO' : 'MANUAL';
+        updateModeLabels(isAuto);
+        sendCommand(currentMode);
+    }
+
+    // ─── Toast Bildirimleri ───
+
+    function showToast(type, message) {
+        const container = document.getElementById('toastContainer');
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.textContent = message;
+        container.appendChild(toast);
+
+        // 3 saniye sonra kaldır
+        setTimeout(() => {
+            toast.classList.add('fadeout');
+            setTimeout(() => toast.remove(), 300);
+        }, 3000);
+    }
+
+    // ─── Modal dışına tıklanırsa kapat ───
+    document.getElementById('confirmModal').addEventListener('click', function(e) {
+        if (e.target === this) {
+            closeModal();
+        }
+    });
+
+    // ─── Escape tuşu ile modal kapat ───
+    document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') {
+            closeModal();
+        }
+    });
+
+    // ─── Polling başlat (1 saniye) ───
+    fetchStatus();
+    setInterval(fetchStatus, 1000);
+</script>
+
+</body>
+</html>
