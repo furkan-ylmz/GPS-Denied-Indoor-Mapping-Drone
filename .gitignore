@@ -27,3 +27,8 @@ CMakeCache.txt
 # İşletim sistemi kalıntıları
 .DS_Store
 Thumbs.db
+
+# SLAM harita veritabanları ve nokta bulutu çıktıları
+*.db
+*.ply
+
