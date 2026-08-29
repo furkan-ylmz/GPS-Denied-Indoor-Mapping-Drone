@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.8)
-project(drone_sim_bringup)
+project(drone_bringup)
 
 if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
   add_compile_options(-Wall -Wextra -Wpedantic)
@@ -27,6 +27,7 @@ install(DIRECTORY
   launch
   config
   rviz
+  web
   DESTINATION share/${PROJECT_NAME}
 )
 

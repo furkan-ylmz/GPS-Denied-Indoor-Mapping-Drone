@@ -1,24 +1,28 @@
 /rtabmap:
   ros__parameters:
-    # ICP (Eşleştirme ve Voxel) Ayarları
-    Icp/VoxelSize: "0.08"                   # Nokta bulutunu 8 cm'lik küplere bölerek seyreltir (İşlemciyi rahatlatır)
+    # ICP (Eşleştirme ve Voxel) Ayarları — Unitree L1 LiDAR için optimize edildi
+    # L1 non-repetitive tarama kullanır: ~2,000 pts/frame @ 11 Hz
+    # Simülasyondaki düzenli 8,100 pts/frame'den çok farklı → seyrek veri uyumu
+    Icp/VoxelSize: "0.05"                   # 0.08→0.05: L1 zaten seyrek, daha az seyreltme
     Icp/PointToPlane: "true"                # Duvar ve zeminleri daha iyi eşleştirmek için noktadan-düzleme algoritması
-    Icp/PointToPlaneK: "20"                 # Düzlem hesaplaması için komşu nokta sayısı
-    Icp/Iterations: "50"                    # Eşleştirme kalitesini artırmak için iterasyon sayısı
+    Icp/PointToPlaneK: "10"                 # 20→10: Seyrek nokta bulutunda daha az komşu yeterli
+    Icp/Iterations: "80"                    # 50→80: Seyrek veri için daha fazla iterasyon gerekli
     Icp/Epsilon: "0.001"
-    Icp/MaxTranslation: "3.0"               # Dronun ani ve hızlı hareketlerini tolere eder
-    Icp/MaxCorrespondenceDistance: "1.0"    # Eşleşme aranacak maksimum mesafe
+    Icp/MaxTranslation: "1.5"               # 3.0→1.5: Gerçek drone kapalı alanda daha yavaş hareket eder
+    Icp/MaxCorrespondenceDistance: "1.5"     # 1.0→1.5: Seyrek eşleşme için daha geniş arama alanı
+    Icp/RangeMin: "0.1"                     # YENİ: Drone gövdesinden çok yakın noktaları filtrele
+    Icp/RangeMax: "20.0"                    # YENİ: L1 efektif menzili (20m PM / 30m RM)
 
-    # Harita Güncelleme Sıklığı (İşlemci dostu ve verimli haritalama)
-    RGBD/AngularUpdate: "0.1"               # Dron sadece ~5.7 derece döndüğünde haritayı güncelle
-    RGBD/LinearUpdate: "0.1"                # Dron sadece 10 cm ilerlediğinde haritayı güncelle
+    # Harita Güncelleme Sıklığı — gerçek uçuşta daha sık güncelleme
+    RGBD/AngularUpdate: "0.05"              # 0.1→0.05: ~2.8 derece döndüğünde güncelle (daha hassas)
+    RGBD/LinearUpdate: "0.05"               # 0.1→0.05: 5 cm ilerlediğinde güncelle
     RGBD/NeighborLinkRefining: "true"       # Komşu düğümler arası bağlantıları iyileştir
 
     # Hafıza Ayarları
     Mem/STMSize: "50"                       # Kısa süreli hafızada tutulacak nokta bulutu sayısı (Hızlı geri dönüşler için)
-    Mem/NotLinkedNodesKept: "false"         # Haritaya bağlanamayan askıda kalmış/hatalı noktaları sil (Hafıza tasarrufu)
+    Mem/NotLinkedNodesKept: "false"          # Haritaya bağlanamayan askıda kalmış/hatalı noktaları sil (Hafıza tasarrufu)
 
-    # 3D Grid (Izgara) Ayarları - Tavan Filtresi Kapatıldı
+    # 3D Grid (Izgara) Ayarları — koridor ortamına göre ayarlandı
     Grid/3D: "true"                         # 3 Boyutlu haritalama modunu zorla
     Grid/RayTracing: "true"                 # Boşlukları hesaplamak için ışın takibi yap
     Grid/CellSize: "0.1"                    # Harita (Grid) çözünürlüğü 10 cm
@@ -26,10 +30,10 @@
     Grid/NoiseFilteringRadius: "0.3"        # Havada asılı kalan tek tük gürültü noktalarını temizleme
     Grid/NoiseFilteringMinNeighbors: "5"
 
-    # 2D Navigasyon Haritası İçin Yükseklik Filtreleri
+    # 2D Navigasyon Haritası İçin Yükseklik Filtreleri — koridor yüksekliği: 2.20-2.30m, uçuş: 1.5m
     Grid/MapFrameProjection: "true"         # Yükseklikleri drona göre değil, mutlak zemin (Map) eksenine göre hesapla
-    Grid/MinObstacleHeight: "1.2"           # Yerden 1.2 metreye (120 cm) kadar olan şeyleri 2D haritada yoksay
-    Grid/MaxObstacleHeight: "1.8"           # Yerden 1.8 metreden (180 cm) yüksek olan şeyleri 2D haritada yoksay
+    Grid/MinObstacleHeight: "0.8"           # 1.2→0.8: Yerden 80 cm'den düşük engeller yoksayılır (sandalye/masa ayakları hariç)
+    Grid/MaxObstacleHeight: "2.2"           # 1.8→2.2: Koridor tavanına kadar engel algıla (tavan ~2.20-2.30m)
 
     # İleri Düzey Döngü Kapatma (Loop Closure) ve Optimizasyon
     RGBD/ProximityBySpace: "true"           # Dron aynı fiziksel mekana tekrar geldiğinde haritayı anında düzelt

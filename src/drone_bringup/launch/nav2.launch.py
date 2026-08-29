@@ -1,6 +1,7 @@
 """
 Nav2 Otonom Navigasyon Launch Dosyası
 Planner, Controller, BT Navigator, Behavior Server ve Lifecycle Manager'ı başlatır.
+Gerçek donanım — use_sim_time kullanılmaz.
 """
 
 import os
@@ -10,7 +11,7 @@ from launch_ros.actions import Node
 
 
 def generate_launch_description():
-    bringup_dir = get_package_share_directory('drone_sim_bringup')
+    bringup_dir = get_package_share_directory('drone_bringup')
     nav2_params_file = os.path.join(bringup_dir, 'config', 'nav2_params.yaml')
 
     # --- Nav2 Node'ları ---
@@ -21,7 +22,7 @@ def generate_launch_description():
         executable='planner_server',
         name='planner_server',
         output='screen',
-        parameters=[nav2_params_file, {'use_sim_time': True}],
+        parameters=[nav2_params_file],
     )
 
     # MPPI Yerel Kontrolcü
@@ -30,7 +31,7 @@ def generate_launch_description():
         executable='controller_server',
         name='controller_server',
         output='screen',
-        parameters=[nav2_params_file, {'use_sim_time': True}],
+        parameters=[nav2_params_file],
     )
 
     # Davranış Ağacı Navigatörü
@@ -39,7 +40,7 @@ def generate_launch_description():
         executable='bt_navigator',
         name='bt_navigator',
         output='screen',
-        parameters=[nav2_params_file, {'use_sim_time': True}],
+        parameters=[nav2_params_file],
     )
 
     # Kurtarma Davranışları (Spin, Backup, Wait)
@@ -48,7 +49,7 @@ def generate_launch_description():
         executable='behavior_server',
         name='behavior_server',
         output='screen',
-        parameters=[nav2_params_file, {'use_sim_time': True}],
+        parameters=[nav2_params_file],
     )
 
     # Yaşam Döngüsü Yöneticisi — Tüm node'ları otomatik başlatır
@@ -57,7 +58,7 @@ def generate_launch_description():
         executable='lifecycle_manager',
         name='lifecycle_manager_navigation',
         output='screen',
-        parameters=[nav2_params_file, {'use_sim_time': True}],
+        parameters=[nav2_params_file],
     )
 
     return LaunchDescription([
