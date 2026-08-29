@@ -1,74 +1,108 @@
 #!/bin/bash
+# ============================================================
+# Otonom Haritalama Dronu — Gerçek Donanım Başlatma Script'i
+# Mod: Otonom Navigasyon (autonomous)
+# ============================================================
 
-# Çıkışta (Ctrl+C) arka plan süreçlerini temizlemek için fonksiyon
+set -e
+
+# Renkli çıktı
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+echo -e "${CYAN}============================================${NC}"
+echo -e "${CYAN}  Otonom Haritalama Dronu — GERÇEK DONANIM  ${NC}"
+echo -e "${CYAN}  Mod: Otonom Navigasyon                    ${NC}"
+echo -e "${CYAN}============================================${NC}"
+
+# Çıkışta arka plan süreçlerini temizlemek için fonksiyon
 cleanup() {
-    echo -e "\n[!] Çıkış yapılıyor. Lütfen bekleyin, RTAB-Map veritabanı güvenli bir şekilde kaydediliyor..."
+    echo -e "\n${YELLOW}[!] Çıkış yapılıyor. RTAB-Map veritabanı güvenli bir şekilde kaydediliyor...${NC}"
     killall -2 rtabmap 2>/dev/null
     sleep 3
-    echo "Diğer süreçler sonlandırılıyor..."
-    killall px4 ruby gz MicroXRCEAgent ros2 python3 2>/dev/null
+    echo -e "${YELLOW}Diğer süreçler sonlandırılıyor...${NC}"
+    killall MicroXRCEAgent ros2 python3 2>/dev/null
+    sleep 1
+    echo -e "${GREEN}[✓] Temizlik tamamlandı.${NC}"
     exit 0
 }
 trap cleanup SIGINT SIGTERM
 
-echo "Eski süreçler temizleniyor..."
-killall px4 ruby gz MicroXRCEAgent ros2 rtabmap python3 2>/dev/null
-
-# Get the absolute path of the workspace root (one level up from this script)
+# ── Ortam Değişkenleri ──────────────────────────────────────
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+WS_DIR="$PROJECT_DIR"
 
-# ROS ve Workspace env
+echo -e "${YELLOW}[1/5] ROS 2 ortamı yükleniyor...${NC}"
 source /opt/ros/jazzy/setup.bash
-source ${PROJECT_DIR}/install/setup.bash
+if [ -f "$WS_DIR/install/setup.bash" ]; then
+    source "$WS_DIR/install/setup.bash"
+else
+    echo -e "${RED}[HATA] Workspace build edilmemiş! Önce colcon build yapın.${NC}"
+    exit 1
+fi
 
-PX4_DIR="${HOME}/PX4-Autopilot"
-export GZ_SIM_RESOURCE_PATH="${PROJECT_DIR}/models:${PROJECT_DIR}/worlds:${PX4_DIR}/Tools/simulation/gz/models:${PX4_DIR}/Tools/simulation/gz/worlds"
+# ── USB Seri Port Latency Fix ───────────────────────────────
+echo -e "${YELLOW}[2/5] USB seri port ayarlanıyor...${NC}"
+if [ -e /sys/bus/usb-serial/devices/ttyUSB0/latency_timer ]; then
+    echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer > /dev/null
+    echo -e "${GREEN}  ✓ USB latency 1ms olarak ayarlandı${NC}"
+else
+    echo -e "${YELLOW}  ⚠ ttyUSB0 bulunamadı — LiDAR bağlı değil mi?${NC}"
+fi
 
-# Snap (VS Code) ortam değişkenlerinin Gazebo GUI'sini bozmasını engellemek için temizliyoruz
-unset GTK_PATH GIO_MODULE_DIR LOCPATH GSETTINGS_SCHEMA_DIR XDG_DATA_HOME
+# ── Seri Port İzinleri ──────────────────────────────────────
+echo -e "${YELLOW}[3/5] Seri port izinleri kontrol ediliyor...${NC}"
+for port in /dev/ttyUSB0 /dev/ttyAMA0; do
+    if [ -e "$port" ]; then
+        if [ ! -r "$port" ] || [ ! -w "$port" ]; then
+            sudo chmod 666 "$port"
+            echo -e "${GREEN}  ✓ $port izinleri ayarlandı${NC}"
+        else
+            echo -e "${GREEN}  ✓ $port erişilebilir${NC}"
+        fi
+    else
+        echo -e "${YELLOW}  ⚠ $port bulunamadı${NC}"
+    fi
+done
 
-echo "Gazebo başlatılıyor..."
-export GZ_CONFIG_PATH="${GZ_CONFIG_PATH}:/usr/share/gz"
-gz sim "${PROJECT_DIR}/worlds/test_building.sdf" > ${PROJECT_DIR}/logs/gazebo.log 2>&1 &
+# ── Sensör Bağlantı Kontrolü ───────────────────────────────
+echo -e "${YELLOW}[4/5] Sensör bağlantıları kontrol ediliyor...${NC}"
+READY=true
+if [ ! -e /dev/ttyUSB0 ]; then
+    echo -e "${RED}  ✗ LiDAR (ttyUSB0) bağlı değil!${NC}"
+    READY=false
+fi
+if [ ! -e /dev/ttyAMA0 ]; then
+    echo -e "${RED}  ✗ Pixhawk UART (ttyAMA0) bağlı değil!${NC}"
+    READY=false
+fi
+# Kamera CSI kontrolü
+if ! ls /dev/video* &>/dev/null; then
+    echo -e "${YELLOW}  ⚠ Kamera cihazı bulunamadı (libcamera ile erişilebilir olabilir)${NC}"
+fi
 
-echo "======================================================================"
-echo "  OTONOM NAVİGASYON MODU"
-echo "  Sistem ROS 2 Launch üzerinden arka planda başlatılıyor..."
-echo "  (SLAM + Nav2 + Drone Navigator)"
-echo "======================================================================"
+if [ "$READY" = false ]; then
+    echo -e "${RED}[HATA] Kritik sensörler bağlı değil. Bağlantıları kontrol edin.${NC}"
+    read -p "Yine de devam etmek istiyor musunuz? (e/H): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Ee]$ ]]; then
+        exit 1
+    fi
+fi
 
-# Tüm arka plan düğümlerini (Simülasyon, SLAM, Bridge, TF, RViz, Nav2, DroneNavigator) launch ile başlatıyoruz
-ros2 launch drone_sim_bringup bringup.launch.py &
+# ── ROS 2 Launch ────────────────────────────────────────────
+echo -e "${YELLOW}[5/5] ROS 2 launch başlatılıyor (mod: autonomous)...${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}  Web Arayüzü: http://localhost:8080       ${NC}"
+echo -e "${GREEN}  Operatör komutu bekleniyor: ARM           ${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+ros2 launch drone_bringup bringup.launch.py mode:=autonomous &
 LAUNCH_PID=$!
 
-echo "Gazebo'nun hazır olması bekleniyor..."
-# Gazebo topiclerinin aktif olmasını bekle ki PX4 başlatıldığında Gazebo'yu görüp bağlanabilsin
-while ! gz topic -l | grep -q "/clock"; do
-  sleep 1
-done
-echo "Gazebo hazır."
-
-echo "PX4 başlatılıyor..."
-cd "${PX4_DIR}"
-export PX4_GZ_NO_FOLLOW=1
-export PX4_GZ_MODEL=x500_lidar
-export PX4_GZ_MODEL_POSE="10.00,-2.00,0.62,0,0,0"
-make px4_sitl gz_x500_lidar > ${PROJECT_DIR}/logs/px4_gazebo.log 2>&1 &
-sleep 5
-
-echo "======================================================================"
-echo "  OTONOM NAVİGASYON SİSTEMİ HAZIR"
-echo "======================================================================"
-echo ""
-echo "  1. Gazebo'da PLAY (▶) tuşuna basın"
-echo "  2. Dron otomatik olarak kalkacak ve 1.5m yükseklikte hover edecek"
-echo "  3. RViz'de harita oluştuğunda '2D Goal Pose' ile hedef verin"
-echo "  4. Dron A* rotasını MPPI ile takip edecek"
-echo ""
-echo "  Çıkış için: Ctrl+C"
-echo "======================================================================"
-
-# Launch çalışırken bekle
+# Launch sürecinin bitmesini bekle
 wait $LAUNCH_PID
-cleanup

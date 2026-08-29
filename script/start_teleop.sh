@@ -1,68 +1,79 @@
 #!/bin/bash
+# ============================================================
+# Otonom Haritalama Dronu — Gerçek Donanım Başlatma Script'i
+# Mod: Manuel Kontrol (teleop)
+# ============================================================
 
-# Çıkışta (Ctrl+C) arka plan süreçlerini temizlemek için fonksiyon
+set -e
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+echo -e "${CYAN}============================================${NC}"
+echo -e "${CYAN}  Otonom Haritalama Dronu — GERÇEK DONANIM  ${NC}"
+echo -e "${CYAN}  Mod: Manuel Kontrol (Teleop)              ${NC}"
+echo -e "${CYAN}============================================${NC}"
+
 cleanup() {
-    echo -e "\n[!] Çıkış yapılıyor. Lütfen bekleyin, RTAB-Map veritabanı güvenli bir şekilde kaydediliyor..."
+    echo -e "\n${YELLOW}[!] Çıkış yapılıyor. RTAB-Map veritabanı güvenli bir şekilde kaydediliyor...${NC}"
     killall -2 rtabmap 2>/dev/null
     sleep 3
-    echo "Diğer süreçler sonlandırılıyor..."
-    killall px4 ruby gz MicroXRCEAgent ros2 python3 2>/dev/null
+    echo -e "${YELLOW}Diğer süreçler sonlandırılıyor...${NC}"
+    killall MicroXRCEAgent ros2 python3 2>/dev/null
+    sleep 1
+    echo -e "${GREEN}[✓] Temizlik tamamlandı.${NC}"
     exit 0
 }
 trap cleanup SIGINT SIGTERM
 
-echo "Eski süreçler temizleniyor..."
-killall px4 ruby gz MicroXRCEAgent ros2 rtabmap python3 2>/dev/null
-
-# Get the absolute path of the workspace root (one level up from this script)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+WS_DIR="$PROJECT_DIR"
 
-# ROS ve Workspace env
+echo -e "${YELLOW}[1/4] ROS 2 ortamı yükleniyor...${NC}"
 source /opt/ros/jazzy/setup.bash
-source ${PROJECT_DIR}/install/setup.bash
+if [ -f "$WS_DIR/install/setup.bash" ]; then
+    source "$WS_DIR/install/setup.bash"
+else
+    echo -e "${RED}[HATA] Workspace build edilmemiş! Önce colcon build yapın.${NC}"
+    exit 1
+fi
 
-PX4_DIR="${HOME}/PX4-Autopilot"
-export GZ_SIM_RESOURCE_PATH="${PROJECT_DIR}/models:${PROJECT_DIR}/worlds:${PX4_DIR}/Tools/simulation/gz/models:${PX4_DIR}/Tools/simulation/gz/worlds"
+# USB latency fix
+echo -e "${YELLOW}[2/4] USB seri port ayarlanıyor...${NC}"
+if [ -e /sys/bus/usb-serial/devices/ttyUSB0/latency_timer ]; then
+    echo 1 | sudo tee /sys/bus/usb-serial/devices/ttyUSB0/latency_timer > /dev/null
+    echo -e "${GREEN}  ✓ USB latency 1ms olarak ayarlandı${NC}"
+fi
 
-# Snap (VS Code) ortam değişkenlerinin Gazebo GUI'sini bozmasını engellemek için temizliyoruz
-unset GTK_PATH GIO_MODULE_DIR LOCPATH GSETTINGS_SCHEMA_DIR XDG_DATA_HOME
+# Seri port izinleri
+echo -e "${YELLOW}[3/4] Seri port izinleri kontrol ediliyor...${NC}"
+for port in /dev/ttyUSB0 /dev/ttyAMA0; do
+    if [ -e "$port" ]; then
+        if [ ! -r "$port" ] || [ ! -w "$port" ]; then
+            sudo chmod 666 "$port"
+        fi
+        echo -e "${GREEN}  ✓ $port erişilebilir${NC}"
+    else
+        echo -e "${YELLOW}  ⚠ $port bulunamadı${NC}"
+    fi
+done
 
-echo "Gazebo başlatılıyor..."
-export GZ_CONFIG_PATH="${GZ_CONFIG_PATH}:/usr/share/gz"
-gz sim "${PROJECT_DIR}/worlds/test_building.sdf" > ${PROJECT_DIR}/logs/gazebo.log 2>&1 &
+echo -e "${YELLOW}[4/4] ROS 2 launch başlatılıyor (mod: manual)...${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+echo -e "${GREEN}  Web Arayüzü: http://localhost:8080       ${NC}"
+echo -e "${GREEN}  Teleop aktif — klavye ile kontrol edin    ${NC}"
+echo -e "${GREEN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
 
-echo "=========================================================="
-echo "Sistem ROS 2 Launch üzerinden arka planda başlatılıyor..."
-echo "=========================================================="
-
-# Tüm arka plan düğümlerini (Simülasyon, SLAM, Bridge, TF, RViz) launch ile başlatıyoruz
-ros2 launch drone_sim_bringup bringup.launch.py mode:=manual &
+ros2 launch drone_bringup bringup.launch.py mode:=manual &
 LAUNCH_PID=$!
 
-echo "Gazebo'nun hazır olması bekleniyor..."
-# Gazebo topiclerinin aktif olmasını bekle ki PX4 başlatıldığında Gazebo'yu görüp bağlanabilsin
-while ! gz topic -l | grep -q "/clock"; do
-  sleep 1
-done
-echo "Gazebo hazır."
+# Teleop'u ayrı terminal'de başlat (klavye girişi gerekli)
+sleep 12
+echo -e "${CYAN}Teleop başlatılıyor...${NC}"
+ros2 run px4_offboard teleop &
 
-echo "PX4 başlatılıyor..."
-cd "${PX4_DIR}"
-export PX4_GZ_NO_FOLLOW=1
-export PX4_GZ_MODEL=x500_lidar
-export PX4_GZ_MODEL_POSE="10.00,-2.00,0.62,0,0,0"
-make px4_sitl gz_x500_lidar > ${PROJECT_DIR}/logs/px4_gazebo.log 2>&1 &
-sleep 5
-
-echo "======================================="
-echo "NOT: Gazebo'da PLAY (Oynat) tuşuna basmayı GZ GUI üzerinden unutmayın!"
-echo "Hazır olduğunuzda 't' tuşu ile kalkış yapabilirsiniz."
-echo "======================================="
-
-# Yeni oluşturduğumuz resmi ROS 2 paketi üzerinden teleop'u başlatıyoruz
-ros2 run px4_offboard teleop
-
-# Teleop kapanırsa launch dosyasını da kapat
-kill $LAUNCH_PID
-cleanup
+wait $LAUNCH_PID
