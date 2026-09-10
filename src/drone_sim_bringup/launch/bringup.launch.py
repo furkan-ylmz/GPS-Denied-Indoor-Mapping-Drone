@@ -10,11 +10,35 @@ from launch.substitutions import PythonExpression
 
 def generate_launch_description():
     home_dir = os.path.expanduser('~')
-    project_dir = os.path.join(home_dir, 'drone_project')
-    px4_dir = os.path.join(home_dir, 'PX4-Autopilot')
 
-    # Environment variables for Gazebo and PX4
-    os.environ['GZ_SIM_RESOURCE_PATH'] = f"{project_dir}/models:{project_dir}/worlds:{px4_dir}/Tools/simulation/gz/models:{px4_dir}/Tools/simulation/gz/worlds"
+    # Proje kök dizinini dinamik tespit et (Ortam değişkeni -> kaynak/install dizini -> varsayılan)
+    project_dir = os.environ.get('PROJECT_DIR')
+    if not project_dir:
+        # Kaynak dizininden çalışıyorsa (src/drone_sim_bringup/launch)
+        candidate_src = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..'))
+        if os.path.exists(os.path.join(candidate_src, 'models')):
+            project_dir = candidate_src
+        else:
+            # Install dizininden çalışıyorsa (install/drone_sim_bringup/share/drone_sim_bringup/launch)
+            candidate_install = os.path.abspath(os.path.join(os.path.dirname(__file__), '..', '..', '..', '..', '..'))
+            if os.path.exists(os.path.join(candidate_install, 'models')):
+                project_dir = candidate_install
+            else:
+                project_dir = os.path.join(home_dir, 'GPS-Denied-Indoor-Mapping-Drone')
+
+    px4_dir = os.environ.get('PX4_DIR', os.path.join(home_dir, 'PX4-Autopilot'))
+
+    # Gazebo ve PX4 ortam değişkenleri
+    existing_gz_path = os.environ.get('GZ_SIM_RESOURCE_PATH', '')
+    gz_paths = [
+        f"{project_dir}/models",
+        f"{project_dir}/worlds",
+        f"{px4_dir}/Tools/simulation/gz/models",
+        f"{px4_dir}/Tools/simulation/gz/worlds"
+    ]
+    if existing_gz_path:
+        gz_paths.append(existing_gz_path)
+    os.environ['GZ_SIM_RESOURCE_PATH'] = ':'.join(filter(None, gz_paths))
     os.environ['GZ_CONFIG_PATH'] = f"{os.environ.get('GZ_CONFIG_PATH', '')}:/usr/share/gz"
     os.environ['PX4_GZ_NO_FOLLOW'] = '1'
     os.environ['PX4_GZ_MODEL'] = 'x500_lidar'

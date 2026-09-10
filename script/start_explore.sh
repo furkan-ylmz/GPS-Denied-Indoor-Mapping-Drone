@@ -16,17 +16,19 @@ killall px4 ruby gz MicroXRCEAgent ros2 rtabmap python3 2>/dev/null
 
 # Get the absolute path of the workspace root (one level up from this script)
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
+export PROJECT_DIR="$(dirname "${SCRIPT_DIR}")"
 
 # ROS ve Workspace env
 source /opt/ros/jazzy/setup.bash
 source ${PROJECT_DIR}/install/setup.bash
 
-PX4_DIR="${HOME}/PX4-Autopilot"
+export PX4_DIR="${PX4_DIR:-${HOME}/PX4-Autopilot}"
 export GZ_SIM_RESOURCE_PATH="${PROJECT_DIR}/models:${PROJECT_DIR}/worlds:${PX4_DIR}/Tools/simulation/gz/models:${PX4_DIR}/Tools/simulation/gz/worlds"
 
 # Snap (VS Code) ortam değişkenlerinin Gazebo GUI'sini bozmasını engellemek için temizliyoruz
 unset GTK_PATH GIO_MODULE_DIR LOCPATH GSETTINGS_SCHEMA_DIR XDG_DATA_HOME
+
+mkdir -p "${PROJECT_DIR}/logs"
 
 echo "Gazebo başlatılıyor..."
 export GZ_CONFIG_PATH="${GZ_CONFIG_PATH}:/usr/share/gz"
