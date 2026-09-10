@@ -31,27 +31,27 @@ The architecture consists of four primary operational modules:
 
 2. **Holonomic Path Planning & Control:**
    - **Global Planner:** A* path planning over 2D occupancy grids with unknown space traversal support.
-   - **Local Controller:** Nav2 MPPI controller with omnidirectional motion model generating 500 predictive trajectory rollouts over a 2-second horizon at 20 Hz.
+   - **Local Controller:** Nav2 MPPI controller generating 500 omnidirectional rollouts at 20 Hz.
    - **Trajectory Critics:** Evaluates collision safety, obstacle clearance, path tracking, and goal heading alignment.
 
 3. **Autonomous Frontier Exploration:**
    - Real-time frontier cell extraction at the boundary of explored and unknown map regions.
    - BFS clustering to group frontier cells and filter out sensor noise.
    - **3-Tier Distance Selection Strategy:**
-     - *Local Zone (< 3.5 m):* Clears nearby room alcoves first to prevent back-and-forth oscillation.
-     - *Mid Zone (3.5 – 7.5 m):* Balances cluster size against flight distance to pick optimal goals.
+     - *Local Zone (< 3.5 m):* Clears nearby room pockets first to prevent oscillation.
+     - *Mid Zone (3.5 – 7.5 m):* Balances cluster size against distance for optimal targets.
      - *Far Zone (> 7.5 m):* Focuses on large unexplored areas across the building.
    - **Dual-Stage Anti-Stuck Supervisor:**
-     - *Proximity Timeout:* Blacklists unreachable goals if forward progress stalls near obstacles for 8 seconds.
-     - *Physical Trap Detection:* Re-plans immediately if the drone is physically blocked for over 12 seconds.
-   - **Post-Goal 200° Yaw Sweep:** Rotates 200° upon reaching waypoints to quickly expand sensor coverage.
-   - **Autonomous Return-to-Home & Landing:** Flies back to the takeoff pose and lands safely when exploration is complete.
+     - *Proximity Timeout:* Blacklists unreachable goals if progress stalls for 8 seconds.
+     - *Physical Trap Detection:* Re-plans immediately if blocked for over 12 seconds.
+   - **Panoramic 200° Yaw Sweep:** Rotates 200° at waypoints to expand sensor coverage.
+   - **Return-to-Home & Landing:** Flies back to takeoff position and lands safely when complete.
 
 4. **Offboard Flight Bridge & Kinematics:**
-   - **Coordinate Frame Conversion:** Real-time translation between PX4 aerospace frames and ROS robotics frames.
-   - **Flight State Machine:** Manages autonomous states from arming and takeoff to navigation, hover, and landing.
-   - **Altitude Lock & Velocity Bridge:** Holds a steady 1.5 m flight altitude while converting velocity commands into PX4 setpoints.
-   - **Smooth Heading Alignment:** Automatically aligns the drone heading with flight direction to maximize sensor visibility.
+   - **Coordinate Frame Conversion:** Real-time translation between PX4 and ROS frames.
+   - **Flight State Machine:** Manages autonomous arming, takeoff, flight, and landing.
+   - **Altitude Lock & Velocity Bridge:** Holds 1.5 m altitude and translates velocity commands.
+   - **Smooth Heading Alignment:** Aligns drone heading with flight path for sensor coverage.
 
 ---
 
@@ -243,8 +243,8 @@ source install/setup.bash
 
 ### Mode 1: Manual Teleoperation
 
-- **Active Nodes:** `drone_teleop`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
-- **Description:** Direct keyboard flight (WASD, QE, ZC) for manual inspection, debugging, and baseline mapping.
+- **Active Nodes:** `drone_teleop`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`
+- **Description:** Manual keyboard flight for testing and mapping.
 
 ```bash
 cd ~/GPS-Denied-Indoor-Mapping-Drone
@@ -262,8 +262,8 @@ cd ~/GPS-Denied-Indoor-Mapping-Drone
 
 ### Mode 2: Autonomous Goal Navigation
 
-- **Active Nodes:** Nav2 stack, `drone_navigator`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
-- **Description:** Point-to-point 2D Goal Pose navigation using A* global planning and MPPI dynamic obstacle avoidance.
+- **Active Nodes:** Nav2, `drone_navigator`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`
+- **Description:** Point-to-point A* navigation with MPPI obstacle avoidance.
 
 ```bash
 cd ~/GPS-Denied-Indoor-Mapping-Drone
@@ -277,8 +277,8 @@ cd ~/GPS-Denied-Indoor-Mapping-Drone
 
 ### Mode 3: Fully Autonomous Frontier Exploration
 
-- **Active Nodes:** `frontier_explorer`, Nav2 stack, `drone_navigator`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
-- **Description:** Fully autonomous frontier-driven room discovery, mapping, panoramic yaw sweeping, and return-to-home landing.
+- **Active Nodes:** `frontier_explorer`, Nav2, `drone_navigator`, `rtabmap`, `rviz2`
+- **Description:** Autonomous room exploration, mapping, and return-to-home.
 
 ```bash
 cd ~/GPS-Denied-Indoor-Mapping-Drone
@@ -337,27 +337,27 @@ Sistem mimarisi dört ana işlem modülünden oluşmaktadır:
 
 2. **Holonomic Yol Planlama ve Kontrol:**
    - **Global Planlayıcı:** 2D doluluk haritasında bilinmeyen alanlardan da geçebilen Navfn A* rota planlayıcısı.
-   - **Yerel Kontrolcü:** Çok yönlü hareket modeliyle saniyede 20 kez geleceğe dönük rota tahminleri üreten Nav2 MPPI kontrolcüsü.
+   - **Yerel Kontrolcü:** Saniyede 20 kez çok yönlü rota tahminleri üreten Nav2 MPPI kontrolcüsü.
    - **Yörünge Kriterleri:** Çarpışma güvenliği, engellerden uzak durma, rota takibi ve hedef yönüne hizalanma değerlendirmesi.
 
 3. **Otonom Sınır Keşif Motoru:**
    - Haritada keşfedilmiş ve bilinmeyen alanların sınırlarını anlık tespit etme.
    - BFS kümeleme algoritması ile sınır noktalarını gruplama ve sensör gürültülerini filtreleme.
    - **3 Kademeli Keşif Stratejisi:**
-     - *Yakın Bölge (< 3.5 m):* Odalar arasında gidip gelmeyi önlemek için önce bulunulan odadaki cepleri temizler.
-     - *Orta Bölge (3.5 – 7.5 m):* Hedef büyüklüğü ile mesafeyi dengeleyerek en verimli sınır kümesini seçer.
-     - *Uzak Bölge (> 7.5 m):* Yapı içerisindeki geniş ve henüz gidilmemiş alanlara öncelik verir.
+     - *Yakın Bölge (< 3.5 m):* Odalar arasında savrulmayı önlemek için cepleri temizler.
+     - *Orta Bölge (3.5 – 7.5 m):* Boyut ve mesafe dengesine göre en uygun hedefi seçer.
+     - *Uzak Bölge (> 7.5 m):* Yapı içerisindeki geniş ve henüz gidilmemiş alanlara odaklanır.
    - **Çift Kademeli Sıkışma Önleme:**
-     - *Yakınlık Zaman Aşımı:* Hedefe yakın bir engelde ilerleme durursa hedefi kara listeye alıp yeni rota çizer.
-     - *Fiziksel Engel Algılama:* Dron 12 saniye boyunca yerinde sıkışıp kalırsa görevi derhal yeniler.
-   - **Panoramik 200° Tarama:** Hedef noktalara varıldığında yerinde 200° dönerek LiDAR ve kamera görüşünü hızla haritaya işler.
-   - **Otonom Eve Dönüş ve İniş:** Keşif tamamlandığında kalkış noktasına geri dönüp otomatik güvenli iniş yapar.
+     - *Yakınlık Zaman Aşımı:* 8 saniye boyunca ilerleme durursa hedefi kara listeye alır.
+     - *Fiziksel Engel Algılama:* Dron 12 saniye boyunca sıkışıp kalırsa görevi yeniler.
+   - **Panoramik 200° Tarama:** Hedefe varıldığında 200° dönerek sensör görüşünü haritaya işler.
+   - **Otonom Eve Dönüş ve İniş:** Keşif tamamlandığında kalkış noktasına dönüp güvenle iner.
 
 4. **Offboard Uçuş Köprüsü ve Kinematik:**
-   - **Koordinat Köprüsü:** PX4 havacılık eksenleri ile ROS robotik eksenleri arasında anlık dönüşüm.
-   - **Uçuş Durum Makinesi:** Motor çalıştırma, kalkış, navigasyon, bekleme ve iniş aşamalarını güvenle yönetir.
-   - **İrtifa Kilidi ve Hız Kontrolü:** 1.5 metre uçuş irtifasını sabit tutarken Nav2 hız komutlarını PX4 setpoint'lerine çevirir.
-   - **Yumuşak Yönlenme:** Kamera ve LiDAR görüşünü maksimize etmek için dronun burnunu otomatik olarak uçuş yönüne çevirir.
+   - **Koordinat Köprüsü:** PX4 havacılık ve ROS robotik eksenleri arasında anlık dönüşüm.
+   - **Uçuş Durum Makinesi:** Kalkış, navigasyon, bekleme ve iniş aşamalarını güvenle yönetir.
+   - **İrtifa ve Hız Kontrolü:** 1.5 m irtifayı sabit tutarak hız komutlarını PX4'e iletir.
+   - **Yumuşak Yönlenme:** Sensör görüşünü artırmak için dronun burnunu uçuş yönüne çevirir.
 
 ---
 
@@ -550,8 +550,8 @@ source install/setup.bash
 
 ### Mod 1: Manuel Klavye Kontrolü (Teleop)
 
-- **Aktif Düğümler:** `drone_teleop`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
-- **Açıklama:** Klavye ile doğrudan (WASD, QE, ZC) manuel uçuş kontrolü, test ve haritalama.
+- **Aktif Düğümler:** `drone_teleop`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`
+- **Açıklama:** Klavye ile test ve haritalama uçuşu.
 
 ```bash
 cd ~/GPS-Denied-Indoor-Mapping-Drone
@@ -569,8 +569,8 @@ cd ~/GPS-Denied-Indoor-Mapping-Drone
 
 ### Mod 2: Otonom Hedef Navigasyonu
 
-- **Aktif Düğümler:** Nav2 stack, `drone_navigator`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
-- **Açıklama:** RViz2 üzerinden 2D Goal Pose ile verilen hedefe A* küresel planlaması ve MPPI dinamik engelden kaçınma ile otonom uçuş.
+- **Aktif Düğümler:** Nav2, `drone_navigator`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`
+- **Açıklama:** A* planlama ve MPPI engelden kaçınma ile noktadan noktaya uçuş.
 
 ```bash
 cd ~/GPS-Denied-Indoor-Mapping-Drone
@@ -584,8 +584,8 @@ cd ~/GPS-Denied-Indoor-Mapping-Drone
 
 ### Mod 3: Tam Otonom Sınır Keşfi (Frontier Exploration)
 
-- **Aktif Düğümler:** `frontier_explorer`, Nav2 stack, `drone_navigator`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
-- **Açıklama:** Sınır tabanlı tam otonom oda keşfi, haritalama, panoramik süpürme ve başlangıç noktasına dönüş ve iniş.
+- **Aktif Düğümler:** `frontier_explorer`, Nav2, `drone_navigator`, `rtabmap`, `rviz2`
+- **Açıklama:** Otonom sınır keşfi, haritalama ve kalkış noktasına güvenli iniş.
 
 ```bash
 cd ~/GPS-Denied-Indoor-Mapping-Drone
