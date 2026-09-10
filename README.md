@@ -7,7 +7,7 @@
 ---
 
 <a name="english"></a>
-# Autonomous Indoor Mapping & Exploration Drone System
+# Autonomous Indoor Mapping & Exploration System
 
 [![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy%20Jalisco-blue.svg)](https://docs.ros.org/en/jazzy/)
 [![Gazebo](https://img.shields.io/badge/Gazebo-Harmonic-orange.svg)](https://gazebosim.org/docs/harmonic)
@@ -313,7 +313,7 @@ The included RViz2 profile (`slam_view.rviz`) loads the following telemetry and 
 ---
 
 <a name="türkçe"></a>
-# Kapalı Alan Otonom Haritalama ve Keşif Drone Sistemi
+# Kapalı Alan Otonom Haritalama ve Keşif Sistemi
 
 [![ROS 2](https://img.shields.io/badge/ROS%202-Jazzy%20Jalisco-blue.svg)](https://docs.ros.org/en/jazzy/)
 [![Gazebo](https://img.shields.io/badge/Gazebo-Harmonic-orange.svg)](https://gazebosim.org/docs/harmonic)
