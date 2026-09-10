@@ -25,47 +25,47 @@ An advanced, fully autonomous indoor quadrotor system combining **PX4 SITL**, **
 The architecture consists of four primary operational modules:
 
 1. **Spatial Perception & 3D SLAM (RTAB-Map ICP Engine):**
-   - 3D LiDAR point cloud processing ($180 \times 45$ beams, 25 m range) with Point-to-Plane Iterative Closest Point (ICP) registration.
-   - Downsampled 0.08 m voxel grid filtering with graph-based loop closure and drift correction powered by `g2o`.
-   - Real-time 2.5D OccupancyGrid projection filtered between 1.2 m and 1.8 m to suppress ground and ceiling reflections.
+   - Real-time 3D LiDAR mapping up to 25 meters using Point-to-Plane ICP.
+   - Graph-based loop closure and drift correction to keep the map accurate.
+   - 2D obstacle grid generation by filtering out floor and ceiling reflections.
 
-2. **Holonomic Path Planning & Control (Nav2 Stack):**
-   - **Global Planner:** $A^*$ search over 2D occupancy grids via `NavfnPlanner` with unknown space traversal support.
-   - **Local Controller:** Model Predictive Path Integral (`MPPIController`) with holonomic `Omni` motion model generating 500 predictive trajectory rollouts across a 2.0 s (40 steps $\times$ 0.05 s) horizon at 20 Hz.
-   - **7 Critic Cost Evaluators:** Collision avoidance (`ConstraintCritic`), obstacle clearance (`CostCritic`), path tracking (`PathAlignCritic`, `PathFollowCritic`), and heading alignment (`PathAngleCritic`, `GoalAngleCritic`).
+2. **Holonomic Path Planning & Control:**
+   - **Global Planner:** A* path planning over 2D occupancy grids with unknown space traversal support.
+   - **Local Controller:** Nav2 MPPI controller with omnidirectional motion model generating 500 predictive trajectory rollouts over a 2-second horizon at 20 Hz.
+   - **Trajectory Critics:** Evaluates collision safety, obstacle clearance, path tracking, and goal heading alignment.
 
-3. **Autonomous Frontier Exploration (`FrontierExplorer`):**
-   - Real-time frontier cell extraction at the boundary of free ($0$) and unknown ($-1$) grid regions.
-   - Breadth-First Search (BFS) connected components clustering with minimum cluster size thresholds.
+3. **Autonomous Frontier Exploration:**
+   - Real-time frontier cell extraction at the boundary of explored and unknown map regions.
+   - BFS clustering to group frontier cells and filter out sensor noise.
    - **3-Tier Distance Selection Strategy:**
-     - *Local Zone ($< 3.5\text{ m}$):* Cleans up local alcoves/pockets (smallest cluster first) to eliminate ping-pong oscillations.
-     - *Mid Zone ($3.5 - 7.5\text{ m}$):* Distance-squared normalized scoring ($\text{Score} = \text{Size} / (\text{Dist}^2 + 0.1)$).
-     - *Far Zone ($> 7.5\text{ m}$):* Global frontier prioritization.
+     - *Local Zone (< 3.5 m):* Clears nearby room alcoves first to prevent back-and-forth oscillation.
+     - *Mid Zone (3.5 – 7.5 m):* Balances cluster size against flight distance to pick optimal goals.
+     - *Far Zone (> 7.5 m):* Focuses on large unexplored areas across the building.
    - **Dual-Stage Anti-Stuck Supervisor:**
-     - *Proximity Stuck:* Cancels and blacklists target if no progress ($> 10\text{ cm}$) is made within 2.5 m of goal for 8 seconds.
-     - *Physical Stuck:* Detects mechanical/obstacle traps if net displacement over 12 seconds is under 0.40 m.
-   - **Post-Goal 200° Yaw Sweep:** Performs a 200° panoramic in-place sensor sweep upon reaching waypoints to accelerate map expansion.
-   - **Autonomous Return-to-Home & Landing:** Automatically plans back to the takeoff pose when all frontiers are exhausted and triggers PX4 `AUTO.LAND`.
+     - *Proximity Timeout:* Blacklists unreachable goals if forward progress stalls near obstacles for 8 seconds.
+     - *Physical Trap Detection:* Re-plans immediately if the drone is physically blocked for over 12 seconds.
+   - **Post-Goal 200° Yaw Sweep:** Rotates 200° upon reaching waypoints to quickly expand sensor coverage.
+   - **Autonomous Return-to-Home & Landing:** Flies back to the takeoff pose and lands safely when exploration is complete.
 
-4. **Offboard Flight Bridge & Kinematics (`DroneNavigator` & `PX4TfBroadcaster`):**
-   - **Coordinate Transformer:** Analytical closed-form conversion between PX4 NED/FRD and ROS 2 ENU/FLU frames.
-   - **State Machine:** Deterministic lifecycle (`IDLE` $\to$ `ARMING` $\to$ `TAKING_OFF` $\to$ `NAVIGATING` $\leftrightarrow$ `HOVERING` $\to$ `LANDING`).
-   - **Altitude Lock & Velocity Bridge:** Clamps Z-axis to $-1.5\text{ m}$ NED while translating ROS FLU body velocities into world NED setpoints.
-   - **Hysteresis Yaw Direction Controller:** Aligns drone heading with velocity vectors ($> 45^\circ$ initiates hover-and-turn; $< 3^\circ$ deadband stabilizes cruise).
+4. **Offboard Flight Bridge & Kinematics:**
+   - **Coordinate Frame Conversion:** Real-time translation between PX4 aerospace frames and ROS robotics frames.
+   - **Flight State Machine:** Manages autonomous states from arming and takeoff to navigation, hover, and landing.
+   - **Altitude Lock & Velocity Bridge:** Holds a steady 1.5 m flight altitude while converting velocity commands into PX4 setpoints.
+   - **Smooth Heading Alignment:** Automatically aligns the drone heading with flight direction to maximize sensor visibility.
 
 ---
 
 ## Technical Stack
 
-- **Operating System:** Ubuntu 24.04 LTS (Noble Numbat)
+- **Operating System:** Ubuntu 24.04 LTS
 - **Middleware:** ROS 2 Jazzy Jalisco
-- **Physics Simulator:** Gazebo Harmonic (gz-sim 8.x) with ODE engine (200 Hz update rate)
+- **Physics Simulator:** Gazebo Harmonic with ODE engine at 200 Hz
 - **Flight Controller:** PX4 Autopilot SITL v1.14+
-- **Communications Bridge:** Micro XRCE-DDS Agent (UDP 8888) & `ros_gz_bridge`
-- **SLAM & Mapping:** RTAB-Map (ICP Point-to-Plane, g2o optimizer)
-- **Navigation Stack:** Nav2 (Navfn $A^*$, MPPI Omni Controller, Costmap2D)
+- **Communications Bridge:** Micro XRCE-DDS Agent and ros_gz_bridge
+- **SLAM & Mapping:** RTAB-Map with Point-to-Plane ICP and g2o optimizer
+- **Navigation Stack:** Nav2 with Navfn A* planner and MPPI controller
 - **Programming Languages:** Python 3.12, C++17, CMake
-- **Visualization:** RViz2 (3D Point Cloud, TF, OccupancyGrid, Costmaps, Frontier Markers)
+- **Visualization:** RViz2
 
 ---
 
@@ -243,7 +243,7 @@ source install/setup.bash
 
 ### Mode 1: Manual Teleoperation
 
-- **Active Nodes:** `teleop` (`drone_teleop`), `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
+- **Active Nodes:** `drone_teleop`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
 - **Description:** Direct keyboard flight (WASD, QE, ZC) for manual inspection, debugging, and baseline mapping.
 
 ```bash
@@ -252,18 +252,18 @@ cd ~/GPS-Denied-Indoor-Mapping-Drone
 ```
 
 **Key Controls:**
-- `t`: Arm drone, switch to Offboard mode, and automatic takeoff ($1.0\text{ m}$)
-- `w` / `s`: Forward / Backward ($\pm 0.5\text{ m}$)
-- `a` / `d`: Left / Right ($\pm 0.5\text{ m}$)
-- `q` / `e`: Up / Down ($\pm 0.15\text{ m}$)
-- `z` / `c`: Rotate Left / Right Yaw ($\pm 0.2\text{ rad}$)
-- `Space`: Immediate Hover (hold position)
-- `l`: Trigger Land procedure
+- `t`: Arm drone, switch to Offboard mode, and take off to 1.0 m
+- `w` / `s`: Move Forward / Backward by 0.5 m
+- `a` / `d`: Move Left / Right by 0.5 m
+- `q` / `e`: Move Up / Down by 0.15 m
+- `z` / `c`: Rotate Left / Right
+- `Space`: Immediate Hover to hold position
+- `l`: Land drone
 
 ### Mode 2: Autonomous Goal Navigation
 
-- **Active Nodes:** `nav2` (`planner_server`, `controller_server`, `bt_navigator`), `autonomous` (`drone_navigator`), `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
-- **Description:** Point-to-point 2D Goal Pose navigation using $A^*$ global planning and MPPI dynamic obstacle avoidance.
+- **Active Nodes:** Nav2 stack, `drone_navigator`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
+- **Description:** Point-to-point 2D Goal Pose navigation using A* global planning and MPPI dynamic obstacle avoidance.
 
 ```bash
 cd ~/GPS-Denied-Indoor-Mapping-Drone
@@ -273,11 +273,11 @@ cd ~/GPS-Denied-Indoor-Mapping-Drone
 1. Press **PLAY (▶)** in the Gazebo GUI.
 2. The drone will automatically arm, take off, and hover at **1.5 m**.
 3. In RViz2, click the **2D Goal Pose** tool and select a destination on the map.
-4. The drone will compute the $A^*$ path and track it using the MPPI controller while dodging obstacles.
+4. The drone will compute the A* path and track it using the MPPI controller while dodging obstacles.
 
 ### Mode 3: Fully Autonomous Frontier Exploration
 
-- **Active Nodes:** `explore` (`frontier_explorer`), `nav2`, `autonomous` (`drone_navigator`), `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
+- **Active Nodes:** `frontier_explorer`, Nav2 stack, `drone_navigator`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
 - **Description:** Fully autonomous frontier-driven room discovery, mapping, panoramic yaw sweeping, and return-to-home landing.
 
 ```bash
@@ -300,13 +300,13 @@ The included RViz2 profile (`slam_view.rviz`) loads the following telemetry and 
 | **MapCloud** | `/mapData` | Persistent 3D dense point cloud generated by RTAB-Map |
 | **PointCloud2** | `/lidar/points` | Raw live 3D LiDAR point cloud |
 | **Map** | `/map` | 2D OccupancyGrid map for path planning |
-| **Global Path** | `/plan` | $A^*$ global trajectory (Green line) |
+| **Global Path** | `/plan` | A* global trajectory (Green line) |
 | **Local Plan** | `/local_plan` | MPPI dynamic rollout trajectory (Blue line) |
 | **Global Costmap** | `/global_costmap/costmap` | Static obstacle inflation layer |
 | **Local Costmap** | `/local_costmap/costmap` | Live 3D obstacle avoidance costmap |
 | **Frontier Clusters** | `/explore/frontiers` | Unexplored boundary markers (Blue cubes) |
-| **Active Target** | `/explore/target` | Selected frontier destination & centroid (Green sphere) |
-| **Coordinate Frames** | `TF` | Full kinematic transform tree (`map` $\to$ `odom` $\to$ `base_link` $\to$ sensors) |
+| **Active Target** | `/explore/target` | Selected frontier destination centroid (Green sphere) |
+| **Coordinate Frames** | `TF` | Full transform tree (map -> odom -> base_link -> sensors) |
 
 <br>
 
@@ -331,47 +331,47 @@ Bu proje; GPS sinyalinin bulunmadığı kapalı alanlarda **PX4 SITL**, **3D LiD
 Sistem mimarisi dört ana işlem modülünden oluşmaktadır:
 
 1. **Uzaysal Algılama ve 3D SLAM (RTAB-Map ICP Motoru):**
-   - 3D LiDAR nokta bulutu ($180 \times 45$ ışın, 25 m menzil) üzerinde Noktadan-Düzleme (Point-to-Plane) ICP eşleştirmesi.
-   - İşlemci yükünü optimize eden 0.08 m voxel ızgaralama, grafik tabanlı döngü kapatma (loop closure) ve `g2o` graf optimizasyonu.
-   - Tavan ve zemin yansımalarını temizlemek amacıyla 1.2 m ile 1.8 m arasında filtrelenen 2.5D OccupancyGrid harita projeksiyonu.
+   - Noktadan-Düzleme ICP ile 25 metreye kadar gerçek zamanlı 3D LiDAR haritalama.
+   - Harita kaymalarını önleyen döngü kapatma ve graf optimizasyonu.
+   - Zemin ve tavanı filtreleyerek temiz bir 2D engel haritası üretimi.
 
-2. **Holonomik Yol Planlama ve Kontrol (Nav2 Stack):**
-   - **Global Planlayıcı:** 2D doluluk haritası üzerinde bilinmeyen bölgelerden geçebilen `NavfnPlanner` ($A^*$) rotası.
-   - **Yerel Kontrolcü:** Holonomik `Omni` hareket modeliyle 20 Hz frekansında, 2.0 saniyelik ufukta (40 adım $\times$ 0.05 s) 500 rastgele yörünge tahmini üreten Model Predictive Path Integral (`MPPIController`).
-   - **7 Eleştirmen (Critic) Puanlama Jürisi:** Çarpışma engelleme (`ConstraintCritic`), duvardan uzaklık (`CostCritic`), rota sadakati (`PathAlignCritic`, `PathFollowCritic`) ve burun açısı yönlendirme (`PathAngleCritic`, `GoalAngleCritic`).
+2. **Holonomic Yol Planlama ve Kontrol:**
+   - **Global Planlayıcı:** 2D doluluk haritasında bilinmeyen alanlardan da geçebilen Navfn A* rota planlayıcısı.
+   - **Yerel Kontrolcü:** Çok yönlü hareket modeliyle saniyede 20 kez geleceğe dönük rota tahminleri üreten Nav2 MPPI kontrolcüsü.
+   - **Yörünge Kriterleri:** Çarpışma güvenliği, engellerden uzak durma, rota takibi ve hedef yönüne hizalanma değerlendirmesi.
 
-3. **Otonom Sınır Keşif Motoru (`FrontierExplorer`):**
-   - Doluluk haritasında serbest ($0$) ve bilinmeyen ($-1$) alan sınırındaki sınır (frontier) hücrelerinin anlık tespiti.
-   - Breadth-First Search (BFS) bağlı bileşenler algoritması ile kümeleme ve küçük gürültülerin elenmesi.
-   - **3 Kademeli Mesafe Seçim Stratejisi:**
-     - *Yerel Bölge ($< 3.5\text{ m}$):* Dronun odalar arasında ileri-geri savrulmasını (ping-pong etkisi) engellemek için mevcut odadaki/cepteki en küçük kümeyi temizler.
-     - *Orta Bölge ($3.5 - 7.5\text{ m}$):* Mesafe karesi ağırlıklı boyut skoru ($\text{Skor} = \text{Boyut} / (\text{Mesafe}^2 + 0.1)$).
-     - *Uzak Bölge ($> 7.5\text{ m}$):* Uzaktaki büyük sınır kümelerine odaklanma.
-   - **Çift Kademeli Sıkışma Önleme Denetimi:**
-     - *Yakınlık Sıkışması:* Hedefe 2.5 m mesafede 8 saniye boyunca 10 cm'den fazla ilerleme kaydedilemezse hedef iptal edilir ve kara listeye alınır.
-     - *Fiziksel Sıkışma:* Son 12 saniyede toplam yer değiştirme 0.40 m'nin altında kalırsa fiziksel sıkışma tespit edilip hedef bırakılır.
-   - **Hedef Sonrası 200° Sabit Hızlı Süpürme:** Hedefe ulaşıldığında dron yerinde 200° dönerek LiDAR ve kameranın yeni alanı haritaya katmasını sağlar.
-   - **Otonom Eve Dönüş ve İniş:** Haritada keşfedilecek sınır kalmadığında başlangıç noktasına (`home_position`) geri döner ve PX4 `AUTO.LAND` modunu tetikleyerek güvenle iner.
+3. **Otonom Sınır Keşif Motoru:**
+   - Haritada keşfedilmiş ve bilinmeyen alanların sınırlarını anlık tespit etme.
+   - BFS kümeleme algoritması ile sınır noktalarını gruplama ve sensör gürültülerini filtreleme.
+   - **3 Kademeli Keşif Stratejisi:**
+     - *Yakın Bölge (< 3.5 m):* Odalar arasında gidip gelmeyi önlemek için önce bulunulan odadaki cepleri temizler.
+     - *Orta Bölge (3.5 – 7.5 m):* Hedef büyüklüğü ile mesafeyi dengeleyerek en verimli sınır kümesini seçer.
+     - *Uzak Bölge (> 7.5 m):* Yapı içerisindeki geniş ve henüz gidilmemiş alanlara öncelik verir.
+   - **Çift Kademeli Sıkışma Önleme:**
+     - *Yakınlık Zaman Aşımı:* Hedefe yakın bir engelde ilerleme durursa hedefi kara listeye alıp yeni rota çizer.
+     - *Fiziksel Engel Algılama:* Dron 12 saniye boyunca yerinde sıkışıp kalırsa görevi derhal yeniler.
+   - **Panoramik 200° Tarama:** Hedef noktalara varıldığında yerinde 200° dönerek LiDAR ve kamera görüşünü hızla haritaya işler.
+   - **Otonom Eve Dönüş ve İniş:** Keşif tamamlandığında kalkış noktasına geri dönüp otomatik güvenli iniş yapar.
 
-4. **Offboard Uçuş Köprüsü ve Kinematik (`DroneNavigator` & `PX4TfBroadcaster`):**
-   - **Koordinat Dönüştürücü:** PX4 NED/FRD eksenleri ile ROS 2 ENU/FLU eksenleri arasında analitik kapalı form dönüşüm.
-   - **Durum Makinesi:** Belirlenimci durum yönetimi (`IDLE` $\to$ `ARMING` $\to$ `TAKING_OFF` $\to$ `NAVIGATING` $\leftrightarrow$ `HOVERING` $\to$ `LANDING`).
-   - **İrtifa Kilidi ve Hız Köprüsü:** Z eksenini $-1.5\text{ m}$ NED irtifasında kilitlerken ROS FLU gövde hızlarını dünya NED hız setpoint'lerine dönüştürür.
-   - **Histerezisli Yaw Yönlendirmesi:** Dronun burnunu hareket yönüne hizalar ($> 45^\circ$ sapmada durup döner; $< 3^\circ$ hata payında seyir hızına geçer).
+4. **Offboard Uçuş Köprüsü ve Kinematik:**
+   - **Koordinat Köprüsü:** PX4 havacılık eksenleri ile ROS robotik eksenleri arasında anlık dönüşüm.
+   - **Uçuş Durum Makinesi:** Motor çalıştırma, kalkış, navigasyon, bekleme ve iniş aşamalarını güvenle yönetir.
+   - **İrtifa Kilidi ve Hız Kontrolü:** 1.5 metre uçuş irtifasını sabit tutarken Nav2 hız komutlarını PX4 setpoint'lerine çevirir.
+   - **Yumuşak Yönlenme:** Kamera ve LiDAR görüşünü maksimize etmek için dronun burnunu otomatik olarak uçuş yönüne çevirir.
 
 ---
 
 ## Teknolojik Altyapı
 
-- **İşletim Sistemi:** Ubuntu 24.04 LTS (Noble Numbat)
+- **İşletim Sistemi:** Ubuntu 24.04 LTS
 - **Robotik Ara Katman:** ROS 2 Jazzy Jalisco
-- **Fiziksel Simülatör:** Gazebo Harmonic (gz-sim 8.x) ODE motoru (200 Hz güncelleme hızı)
+- **Fiziksel Simülatör:** Gazebo Harmonic ve 200 Hz ODE fizik motoru
 - **Otopilot:** PX4 Autopilot SITL v1.14+
-- **Haberleşme Köprüsü:** Micro XRCE-DDS Agent (UDP 8888) ve `ros_gz_bridge`
-- **Haritalama (SLAM):** RTAB-Map (ICP Point-to-Plane, g2o optimizasyon motoru)
-- **Navigasyon Paketi:** Nav2 (Navfn $A^*$, MPPI Omni Controller, Costmap2D)
+- **Haberleşme Köprüsü:** Micro XRCE-DDS Agent ve ros_gz_bridge
+- **Haritalama:** RTAB-Map, Point-to-Plane ICP ve g2o optimizasyon motoru
+- **Navigasyon Paketi:** Nav2, Navfn A* planlayıcı ve MPPI kontrolcüsü
 - **Programlama Dilleri:** Python 3.12, C++17, CMake
-- **Görselleştirme:** RViz2 (3D Nokta Bulutu, TF, Doluluk Haritası, Maliyet Haritaları, Keşif Marker'ları)
+- **Görselleştirme:** RViz2
 
 ---
 
@@ -550,7 +550,7 @@ source install/setup.bash
 
 ### Mod 1: Manuel Klavye Kontrolü (Teleop)
 
-- **Aktif Düğümler:** `teleop` (`drone_teleop`), `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
+- **Aktif Düğümler:** `drone_teleop`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
 - **Açıklama:** Klavye ile doğrudan (WASD, QE, ZC) manuel uçuş kontrolü, test ve haritalama.
 
 ```bash
@@ -559,18 +559,18 @@ cd ~/GPS-Denied-Indoor-Mapping-Drone
 ```
 
 **Klavye Kontrol Tuşları:**
-- `t`: Motorları ARM et, Offboard moda geç ve otomatik kalkış yap ($1.0\text{ m}$)
-- `w` / `s`: İleri / Geri ($\pm 0.5\text{ m}$)
-- `a` / `d`: Sol / Sağ ($\pm 0.5\text{ m}$)
-- `q` / `e`: Yukarı / Aşağı ($\pm 0.15\text{ m}$)
-- `z` / `c`: Sola Dön / Sağa Dön Yaw ($\pm 0.2\text{ rad}$)
-- `Space`: Anlık Hover (olduğun yerde sabit kal)
+- `t`: Motorları çalıştır, Offboard moda geç ve 1.0 m otomatik kalkış yap
+- `w` / `s`: İleri / Geri 0.5 m hareket
+- `a` / `d`: Sol / Sağ 0.5 m hareket
+- `q` / `e`: Yukarı / Aşağı 0.15 m hareket
+- `z` / `c`: Sola / Sağa dönüş
+- `Space`: Anlık Hover ile konumunu koru
 - `l`: Güvenli iniş prosedürünü başlat
 
 ### Mod 2: Otonom Hedef Navigasyonu
 
-- **Aktif Düğümler:** `nav2` (`planner_server`, `controller_server`, `bt_navigator`), `autonomous` (`drone_navigator`), `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
-- **Açıklama:** RViz2 üzerinden 2D Goal Pose ile verilen hedefe $A^*$ küresel planlaması ve MPPI dinamik engelden kaçınma ile otonom uçuş.
+- **Aktif Düğümler:** Nav2 stack, `drone_navigator`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
+- **Açıklama:** RViz2 üzerinden 2D Goal Pose ile verilen hedefe A* küresel planlaması ve MPPI dinamik engelden kaçınma ile otonom uçuş.
 
 ```bash
 cd ~/GPS-Denied-Indoor-Mapping-Drone
@@ -578,14 +578,14 @@ cd ~/GPS-Denied-Indoor-Mapping-Drone
 ```
 
 1. Gazebo arayüzünde **PLAY (▶)** butonuna basın.
-2. Dron otomatik olarak ARM olup kalkacak ve **1.5 m** irtifada hover moduna geçecektir.
+2. Dron otomatik olarak kalkacak ve **1.5 m** irtifada beklemeye geçecektir.
 3. RViz2 arayüzünde üst bardan **2D Goal Pose** aracını seçip haritada gitmek istediğiniz noktaya tıklayın.
-4. Dron $A^*$ rotasını MPPI kontrolcüsü ile takip ederek engellerin etrafından dolaşıp hedefe varacaktır.
+4. Dron A* rotasını MPPI kontrolcüsü ile takip ederek engellerin etrafından dolaşıp hedefe varacaktır.
 
 ### Mod 3: Tam Otonom Sınır Keşfi (Frontier Exploration)
 
-- **Aktif Düğümler:** `explore` (`frontier_explorer`), `nav2`, `autonomous` (`drone_navigator`), `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
-- **Açıklama:** Sınır (frontier) tabanlı tam otonom oda keşfi, haritalama, panoramik süpürme ve başlangıç noktasına dönüş/iniş.
+- **Aktif Düğümler:** `frontier_explorer`, Nav2 stack, `drone_navigator`, `rtabmap`, `rviz2`, `px4_tf_broadcaster`, `ros_gz_bridge`
+- **Açıklama:** Sınır tabanlı tam otonom oda keşfi, haritalama, panoramik süpürme ve başlangıç noktasına dönüş ve iniş.
 
 ```bash
 cd ~/GPS-Denied-Indoor-Mapping-Drone
@@ -606,11 +606,11 @@ Varsayılan konfigürasyonda (`slam_view.rviz`) aşağıdaki veri katmanları ca
 |---|---|---|
 | **MapCloud** | `/mapData` | RTAB-Map tarafından üretilen kalıcı ve birleştirilmiş 3D yoğun nokta bulutu |
 | **PointCloud2** | `/lidar/points` | Canlı ham 3D LiDAR nokta bulutu |
-| **Map** | `/map` | Navigasyon ve planlama için kullanılan 2D doluluk ızgarası (OccupancyGrid) |
-| **Global Path** | `/plan` | $A^*$ küresel yol planlayıcısı tarafından çizilen ana rota (Yeşil) |
+| **Map** | `/map` | Navigasyon ve planlama için kullanılan 2D doluluk haritası |
+| **Global Path** | `/plan` | A* küresel yol planlayıcısı tarafından çizilen ana rota (Yeşil) |
 | **Local Plan** | `/local_plan` | MPPI kontrolcüsünün hesapladığı anlık yerel kaçış rotası (Mavi) |
-| **Global Costmap** | `/global_costmap/costmap` | Statik harita duvarları ve şişirme (inflation) katmanı |
+| **Global Costmap** | `/global_costmap/costmap` | Statik harita duvarları ve şişirme katmanı |
 | **Local Costmap** | `/local_costmap/costmap` | Anlık sensör verisinden beslenen 3D engel kaçınma katmanı |
 | **Frontier Kümeleri** | `/explore/frontiers` | Tespit edilen keşfedilmemiş sınır noktaları (Mavi küpler) |
-| **Aktif Hedef** | `/explore/target` | Seçilen hedef sınır kümesi ve ağırlık merkezi (Yeşil küre) |
-| **Koordinat Eksenleri** | `TF` | Tüm sistem koordinat ağacı (`map` $\to$ `odom` $\to$ `base_link` $\to$ sensörler) |
+| **Aktif Hedef** | `/explore/target` | Seçilen hedef sınır kümesi ağırlık merkezi (Yeşil küre) |
+| **Koordinat Eksenleri** | `TF` | Tüm sistem koordinat ağacı (map -> odom -> base_link -> sensörler) |
