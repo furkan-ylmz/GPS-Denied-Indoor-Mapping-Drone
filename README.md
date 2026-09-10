@@ -306,7 +306,7 @@ The included RViz2 profile (`slam_view.rviz`) loads the following telemetry and 
 | **Local Costmap** | `/local_costmap/costmap` | Live 3D obstacle avoidance costmap |
 | **Frontier Clusters** | `/explore/frontiers` | Unexplored boundary markers (Blue cubes) |
 | **Active Target** | `/explore/target` | Selected frontier destination centroid (Green sphere) |
-| **Coordinate Frames** | `TF` | Full transform tree (map -> odom -> base_link -> sensors) |
+| **Coordinate Frames** | `TF` | Transform tree (map -> odom -> base_link -> sensors) |
 
 <br>
 
@@ -322,7 +322,7 @@ The included RViz2 profile (`slam_view.rviz`) loads the following telemetry and 
 [![Navigation](https://img.shields.io/badge/Navigation-Nav2%20MPPI%20Omni-yellow.svg)](https://navigation.ros.org/)
 [![Platform](https://img.shields.io/badge/OS-Ubuntu%2024.04%20LTS-purple.svg)](https://ubuntu.com/)
 
-Bu proje; GPS sinyalinin bulunmadığı kapalı alanlarda **PX4 SITL**, **3D LiDAR** ve **RGB Kamera** sensör füzyonu kullanarak **Gazebo Harmonic** ortamında çalışan tam otonom bir quadrotor sistemidir. Sistem; RTAB-Map Point-to-Plane ICP algoritmasıyla yüksek doğruluklu 3D SLAM haritalama, Nav2 MPPI ile holonomik engelden kaçınma, BFS kümeleme ve akıllı sıkışma tespiti içeren otonom sınır keşfi (Frontier Exploration) ile kesintisiz NED ↔ ENU koordinat köprülemesi sağlar.
+**PX4 SITL**, **3D LiDAR** ve **RGB Kamera** simülasyonunu **Gazebo Harmonic** ortamında birleştiren gelişmiş ve tam otonom bir kapalı alan quadrotor sistemi. Sistem; RTAB-Map Point-to-Plane ICP ile yüksek doğruluklu gerçek zamanlı 3D SLAM, Nav2 MPPI ile holonomik engelden kaçınma, BFS kümeleme ve sıkışma önleme ile otonom sınır keşfi ve GPS'siz ortamlar için kesintisiz NED ↔ ENU koordinat köprülemesi sağlar.
 
 ---
 
@@ -338,7 +338,7 @@ Sistem mimarisi dört ana işlem modülünden oluşmaktadır:
 2. **Holonomic Yol Planlama ve Kontrol:**
    - **Global Planlayıcı:** 2D doluluk haritasında bilinmeyen alanlardan da geçebilen Navfn A* rota planlayıcısı.
    - **Yerel Kontrolcü:** Saniyede 20 kez çok yönlü rota tahminleri üreten Nav2 MPPI kontrolcüsü.
-   - **Yörünge Kriterleri:** Çarpışma güvenliği, engellerden uzak durma, rota takibi ve hedef yönüne hizalanma değerlendirmesi.
+   - **Yörünge Kriterleri:** Çarpışma güvenliği, engel mesafesi, rota takibi ve hedefe yönelme.
 
 3. **Otonom Sınır Keşif Motoru:**
    - Haritada keşfedilmiş ve bilinmeyen alanların sınırlarını anlık tespit etme.
@@ -613,4 +613,4 @@ Varsayılan konfigürasyonda (`slam_view.rviz`) aşağıdaki veri katmanları ca
 | **Local Costmap** | `/local_costmap/costmap` | Anlık sensör verisinden beslenen 3D engel kaçınma katmanı |
 | **Frontier Kümeleri** | `/explore/frontiers` | Tespit edilen keşfedilmemiş sınır noktaları (Mavi küpler) |
 | **Aktif Hedef** | `/explore/target` | Seçilen hedef sınır kümesi ağırlık merkezi (Yeşil küre) |
-| **Koordinat Eksenleri** | `TF` | Tüm sistem koordinat ağacı (map -> odom -> base_link -> sensörler) |
+| **Eksen Takımları** | `TF` | Dönüşüm ağacı (map -> odom -> base_link -> sensörler) |
